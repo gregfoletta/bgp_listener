@@ -107,7 +107,7 @@ int bgp_readloop(struct bgp_peer *peer) {
         while (bytes_read < BGP_HEADER_LEN) {
             byte_interval = recv(peer->socket.fd, buffer_pos, BGP_HEADER_LEN - bytes_read, 0);
 
-            if (byte_interval == -1) { 
+            if (byte_interval <= 0) { 
                 return 0;
             }
 
@@ -121,7 +121,7 @@ int bgp_readloop(struct bgp_peer *peer) {
 
         while (bytes_read < msg_header.length - BGP_HEADER_LEN) {
             byte_interval = recv(peer->socket.fd, buffer_pos, (msg_header.length - BGP_HEADER_LEN) - bytes_read, 0);
-            if (byte_interval == -1) {
+            if (byte_interval <= 0) {
                 return 0;
             }
             buffer_pos += byte_interval;
