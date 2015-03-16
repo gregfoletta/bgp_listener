@@ -1,9 +1,3 @@
-
-#include <string.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <errno.h>
-
 #include "bgp.h"
 
 
@@ -25,6 +19,7 @@ struct bgp_peer *bgp_create_peer(const char *ip, const int asn, const char *name
 
 
 int bgp_destroy_peer(struct bgp_peer *bgp_peer) {
+    close(bgp_peer->socket.fd);
     free(bgp_peer->name);
     free(bgp_peer->ip);
     free(bgp_peer);
@@ -56,6 +51,30 @@ int bgp_connect(struct bgp_peer *peer) {
 
     return 1;
 }
+
+void bgp_create_header(const short length, bgp_msg_type type, unsigned char *buffer) {
+    uint8_t header_marker[16] = {   0xff, 0xff, 0xff, 0xff,
+                                    0xff, 0xff, 0xff, 0xff,
+                                    0xff, 0xff, 0xff, 0xff,
+                                    0xff, 0xff, 0xff, 0xff  };
+
+    //Copy the 16 octets of header marker
+    memcpy(buffer, header_marker, 16);
+
+    //Copy the length
+    buffer[16] = length >> 8;
+    buffer[17] = length & 0xff;
+
+    //Copy message type
+    buffer[18] = type;
+}
+
+
+void bgp_send_message(const struct bgp_peer *peer) {
+    peer = peer;    
+}
+
+
 
 void bgp_print_err(char *err_message) {
     int error = errno;
