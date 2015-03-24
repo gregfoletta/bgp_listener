@@ -5,6 +5,8 @@
 #include <unistd.h>
 #include <errno.h>
 
+#include <math.h>
+
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -43,23 +45,37 @@ struct bgp_local {
     int identifier;
 };
 
-struct bgp_header {
+struct bgp_msg {
     uint16_t length;
     bgp_msg_type type;
+    uint8_t body[BGP_MAX_LEN - BGP_HEADER_LEN];
 };
+
+struct bgp_ipv4_route {
+    uint8_t network[4];
+    uint8_t prefix;
+};
+
+struct bgp_route_chain {
+    struct bgp_ipv4_route route;
+    struct bgp_route_chain *next;
+};
+
 
 
 struct bgp_peer *bgp_create_peer(const char *, const int, const char*);
 int bgp_destroy_peer(struct bgp_peer *);
 
 void bgp_create_header(const short, bgp_msg_type, unsigned char*);
-struct bgp_header bgp_validate_header(const uint8_t *);
+struct bgp_msg bgp_validate_header(const uint8_t *);
 
 int bgp_connect(struct bgp_peer *);
 int bgp_open(struct bgp_peer *, const struct bgp_local);
 int bgp_keepalive(struct bgp_peer *);
 
 int bgp_readloop(struct bgp_peer *);
+void parse_update(struct bgp_msg);
+struct bgp_route_chain *extract_routes(int, uint8_t *);
 
 void bgp_print_err(char *);
 

@@ -94,11 +94,10 @@ int bgp_readloop(struct bgp_peer *peer) {
     uint8_t buffer[BGP_MAX_LEN];
     uint8_t *buffer_pos;
 
-    struct bgp_header msg_header;
+    struct bgp_msg message;
 
     int bytes_read;
     int byte_interval;
-    buffer_pos = buffer;
 
     while (1) {
         bytes_read = 0;
@@ -115,12 +114,14 @@ int bgp_readloop(struct bgp_peer *peer) {
             bytes_read += byte_interval;
         }
 
-        msg_header = bgp_validate_header(buffer);
-        
+        message = bgp_validate_header(buffer);
+       
+        //Reset the read and buffer position - we use the same buffer as we used in the header. 
         bytes_read = 0;
+        buffer_pos = buffer;
 
-        while (bytes_read < msg_header.length - BGP_HEADER_LEN) {
-            byte_interval = recv(peer->socket.fd, buffer_pos, (msg_header.length - BGP_HEADER_LEN) - bytes_read, 0);
+        while (bytes_read < message.length - BGP_HEADER_LEN) {
+            byte_interval = recv(peer->socket.fd, buffer_pos, (message.length - BGP_HEADER_LEN) - bytes_read, 0);
             if (byte_interval <= 0) {
                 return 0;
             }
@@ -128,13 +129,17 @@ int bgp_readloop(struct bgp_peer *peer) {
             bytes_read += byte_interval;
         }
 
-        switch (msg_header.type) {
+        //Copy the body to the message
+        memcpy(&message.body, buffer, message.length);
+
+
+        switch (message.type) {
             case OPEN:
                 printf("OPEN\n");
                 bgp_keepalive(peer);
                 break;
             case UPDATE:
-                printf("UPDATE\n");
+                parse_update(message);
                 break;
             case NOTIFICATION:
                 printf("NOTIFICATION\n");
@@ -148,6 +153,62 @@ int bgp_readloop(struct bgp_peer *peer) {
     }
     return 1;
 }
+
+
+
+void parse_update(struct bgp_msg message) {
+    int withdrawn_len;
+
+    //Withdrawn length is the number of octets contained 
+    withdrawn_len = (*message.body << 8) | *(message.body + 1);
+
+    printf("UPDATE\n");
+    printf("Widthdrawn len: %d\n", withdrawn_len);
+
+    extract_routes(withdrawn_len, message.body + 2);
+}
+
+/*
+extract_route()
+
+Given a start point in a buffer and a length, it recusively extracts routes from
+an update of the form [prefix_length (1 byte), prefix (var)].
+It returns a bgp_route_chain object, which is a linked list of 
+all of the routes in the update
+*/
+struct bgp_route_chain *extract_routes(int length, uint8_t *routes) {
+    struct bgp_route_chain *node = NULL;
+    int net_len;
+
+    if (length == 0) {
+        return NULL;
+    }
+
+   
+    //Allocate the node, set the prefix length and increment the pointer.
+    node = malloc(sizeof(*node));
+    node->route.prefix = *routes++;
+
+
+    if (node->route.prefix > 32) {
+        bgp_print_err("bgp_route_chain(): prefix length > 32");
+    }
+
+    net_len = ceil((float) node->route.prefix / 8);
+
+    memcpy(node->route.network, routes , net_len); 
+
+    printf("Length: %d, net_len: %d\n", length, net_len);
+    printf("%x.%x.%x.%x/%x\n", node->route.network[0], node->route.network[1], node->route.network[2], node->route.network[3], node->route.prefix);
+    
+    //Decrease the length of routes (1 byte for the prefix len + length of the network)
+
+    node->next = extract_routes(length - (1 + net_len), routes + net_len);
+
+    return node->next;
+}
+    
+
 
 void bgp_create_header(const short length, bgp_msg_type type, unsigned char *buffer) {
     uint8_t header_marker[16] = {   0xff, 0xff, 0xff, 0xff,
@@ -167,8 +228,8 @@ void bgp_create_header(const short length, bgp_msg_type type, unsigned char *buf
 }
 
 
-struct bgp_header bgp_validate_header(const uint8_t *header_buffer) {
-    struct bgp_header header;
+struct bgp_msg bgp_validate_header(const uint8_t *header_buffer) {
+    struct bgp_msg header;
 
     //Check to see that the first 8 octets are 0xff
     for (int x = 0; x < BGP_HEADER_MARKER_LEN; x++) {
@@ -182,8 +243,6 @@ struct bgp_header bgp_validate_header(const uint8_t *header_buffer) {
 
     return header;
 }
-
-
 
 
 
