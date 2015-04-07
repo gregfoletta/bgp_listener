@@ -1,9 +1,96 @@
+#include <string.h> 
+#include <stdlib.h> 
+#include <stdio.h> 
+#include <stdint.h> 
+#include <unistd.h> 
+#include <errno.h> 
+
+#include <sys/time.h>
+ 
+#include <math.h> 
+ 
+#define TCP_BGP_PORT 179 
+ 
+#define BGP_HEADER_LEN 19 
+#define BGP_HEADER_MARKER_LEN 16 
+//First byte after BGP header, same as length of header. 
+#define BGP_MAX_LEN 4096 
+
 #include "bgp.h"
 
+char *bgp_msg_code[] = {
+    "<Reserved>",
+    "OPEN",
+    "UPDATE", 
+    "NOTIFICATION",
+    "KEEPALIVE",
+    "ROUTE-REFRESH"
+};
 
-struct bgp_peer *bgp_create_peer(const char *ip, const int asn, const char *name) {
+char *pa_type_code[] = {
+    "<Reserved>",
+    "ORIGIN",
+    "AS_PATH",
+    "NEXT_HOP",
+    "MULTI_EXIT_DISC",
+    "LOCAL_PREF",
+    "ATOMIC_AGGREGATE",
+    "AGGREGATOR"
+};
 
+
+
+struct bgp_msg {
+    uint16_t length;
+    bgp_msg_type type;
+    uint8_t body[BGP_MAX_LEN - BGP_HEADER_LEN];
+};
+
+struct bgp_ipv4_route {
+    uint8_t network[4];
+    uint8_t prefix;
+};
+
+struct bgp_route_chain {
+    struct bgp_ipv4_route route;
+    struct bgp_route_chain *next;
+};
+
+struct bgp_path_attribute {
+    uint8_t flags;
+    uint8_t type;
+    uint16_t length;
+    uint8_t *value;
+};
+
+struct bgp_pa_chain {
+    struct bgp_pa_chain *next;
+    struct bgp_path_attribute pa;
+};
+
+
+//Non-public functions:
+static void parse_update(struct bgp_msg);
+struct bgp_route_chain *extract_routes(int, uint8_t *);
+struct bgp_pa_chain *extract_path_attributes(int, uint8_t *);
+
+void bgp_create_header(const short, bgp_msg_type, unsigned char*);
+struct bgp_msg bgp_validate_header(const uint8_t *);
+
+int bgp_keepalive(struct bgp_peer *);
+
+
+
+
+
+
+struct bgp_peer *bgp_create_peer(const char *ip, const int asn, const char *name, struct bgp_peer_group *group) {
     struct bgp_peer *bgp_peer;
+    int x;
+
+    //Go through the peer list and find a hole. The peer group should be memset to 0
+    while ( (bgp_peer = group->peer_list[x++]) ) { ; }
+    
     bgp_peer = malloc(sizeof(*bgp_peer));
 
     bgp_peer->ip = malloc((strlen(ip) + 1) * sizeof(*ip));
@@ -90,7 +177,7 @@ int bgp_keepalive(struct bgp_peer *peer) {
 }
 
 
-int bgp_readloop(struct bgp_peer *peer) {
+int bgp_loop(struct bgp_peer *peer) {
     uint8_t buffer[BGP_MAX_LEN];
     uint8_t *buffer_pos;
 
@@ -98,10 +185,35 @@ int bgp_readloop(struct bgp_peer *peer) {
 
     int bytes_read;
     int byte_interval;
+    int fd_ready;
+
+    struct timeval select_wait;
+
+    
+    fd_set select_set;
+    
+    //Set up the select() set
+    FD_ZERO(&select_set);
 
     while (1) {
         bytes_read = 0;
         buffer_pos = buffer;
+        select_wait = (struct timeval){ 1, 0 };
+
+
+        FD_SET(peer->socket.fd, &select_set);   
+
+        //Wait for an active socket
+        fd_ready = select(peer->socket.fd + 1, &select_set, NULL, NULL, &select_wait);
+
+        if (fd_ready < 0) {
+            bgp_print_err("select() error");
+        } else if (fd_ready == 0) {
+            //Select timeout
+            printf("select() timeout\n");
+            continue;
+        }
+
         //We first read enough to get the header of the message
         while (bytes_read < BGP_HEADER_LEN) {
             byte_interval = recv(peer->socket.fd, buffer_pos, BGP_HEADER_LEN - bytes_read, 0);
@@ -132,23 +244,21 @@ int bgp_readloop(struct bgp_peer *peer) {
         //Copy the body to the message
         memcpy(&message.body, buffer, message.length);
 
+        printf("{ %s }\n", bgp_msg_code[message.type]);
 
         switch (message.type) {
             case OPEN:
-                printf("OPEN\n");
                 bgp_keepalive(peer);
                 break;
             case UPDATE:
                 parse_update(message);
                 break;
             case NOTIFICATION:
-                printf("NOTIFICATION\n");
                 break;
             case KEEPALIVE:
-                printf("KEEPALIVE\n");
                 break;
             default:
-                bgp_print_err("Unknown BGP message type");
+                break;
         }
     }
     return 1;
@@ -156,16 +266,36 @@ int bgp_readloop(struct bgp_peer *peer) {
 
 
 
-void parse_update(struct bgp_msg message) {
-    int withdrawn_len;
+static void parse_update(struct bgp_msg message) {
+    int withdrawn_len, pa_len, nlri_len;
+
+    //body_pos is the current position within the BGP message body
+    uint8_t *body_pos = message.body;
 
     //Withdrawn length is the number of octets contained 
-    withdrawn_len = (*message.body << 8) | *(message.body + 1);
+    withdrawn_len = *(body_pos++) << 8;
+    withdrawn_len |= *(body_pos++);
 
-    printf("UPDATE\n");
-    printf("Widthdrawn len: %d\n", withdrawn_len);
+    
+    if (withdrawn_len > 0) {
+        extract_routes(withdrawn_len, body_pos);
+        body_pos += withdrawn_len;
+    }
 
-    extract_routes(withdrawn_len, message.body + 2);
+    pa_len = *(body_pos++) << 8;
+    pa_len |= *(body_pos++);
+    
+    //The "4" is the withdrawn routes length field (2 bytes) and the PA Attribute length field (2 bytes)
+    nlri_len = message.length - BGP_HEADER_LEN - 4 - withdrawn_len - pa_len;
+
+    if (pa_len > 0) {
+        extract_path_attributes(pa_len, body_pos);
+        body_pos += pa_len;
+    }
+
+    extract_routes(nlri_len, body_pos);
+    printf("\n");
+
 }
 
 /*
@@ -180,7 +310,7 @@ struct bgp_route_chain *extract_routes(int length, uint8_t *routes) {
     struct bgp_route_chain *node = NULL;
     int net_len;
 
-    if (length == 0) {
+    if (length <= 0) {
         return NULL;
     }
 
@@ -198,8 +328,8 @@ struct bgp_route_chain *extract_routes(int length, uint8_t *routes) {
 
     memcpy(node->route.network, routes , net_len); 
 
-    printf("Length: %d, net_len: %d\n", length, net_len);
-    printf("%x.%x.%x.%x/%x\n", node->route.network[0], node->route.network[1], node->route.network[2], node->route.network[3], node->route.prefix);
+    printf("  { %d.%d.%d.%d/%d ", node->route.network[0], node->route.network[1], node->route.network[2], node->route.network[3], node->route.prefix);
+    printf("(%x %x %x %x %x) }\n", node->route.network[0], node->route.network[1], node->route.network[2], node->route.network[3], node->route.prefix);
     
     //Decrease the length of routes (1 byte for the prefix len + length of the network)
 
@@ -207,6 +337,33 @@ struct bgp_route_chain *extract_routes(int length, uint8_t *routes) {
 
     return node->next;
 }
+
+
+struct bgp_pa_chain *extract_path_attributes(int length, uint8_t *attributes) {
+    struct bgp_pa_chain *node = NULL;
+
+    if (length <= 0) {
+        return NULL;
+    }
+
+    node = malloc(sizeof(*node));
+    
+    node->pa.flags = *attributes++;
+    node->pa.type = *attributes++;
+    node->pa.length = *attributes++;
+
+    //Copy the attribute
+    node->pa.value = malloc(sizeof(node->pa.value) * node->pa.length);
+    memcpy(node->pa.value, attributes, node->pa.length);
+    attributes += node->pa.length;
+
+    printf(" { F: %x T: %s L: %x }\n", node->pa.flags, pa_type_code[node->pa.type], node->pa.length);
+
+    node->next = extract_path_attributes(length - node->pa.length - 3, attributes);
+
+    return node;
+}
+
     
 
 
