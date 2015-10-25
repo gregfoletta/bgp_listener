@@ -2,8 +2,6 @@
 #include <netinet/in.h> 
 #include <arpa/inet.h> 
 
-#define MAX_BGP_PEERS 16
-
 #define BGP_HEADER_LEN 19 
 #define BGP_HEADER_MARKER_LEN 16 
 
@@ -17,6 +15,14 @@ typedef enum {
     KEEPALIVE
 } bgp_msg_type;
 
+enum { 
+    BGP_IDLE, 
+    BGP_ACTIVE, 
+    BGP_OPENSENT, 
+    BGP_OPENCONFIRM, 
+    BGP_ESTABLISHED 
+} bgp_fsm_states;
+
 struct bgp_socket {
     int fd;
     struct sockaddr_in sock_addr;
@@ -26,16 +32,11 @@ struct bgp_peer {
     char *name;
     unsigned int asn;
     char *ip;
-    int hold_time;
-    int identifier;
+    uint16_t recv_hold_time;
+    uint16_t curr_hold_time;
+    enum bgp_fsm_states fsm_state;
     struct bgp_socket socket;
 };
-
-struct bgp_peer_group {
-    int total_peers;
-    struct bgp_peer *peer_list[MAX_BGP_PEERS];
-};
-
 
 struct bgp_local {
     unsigned int asn;
@@ -44,7 +45,7 @@ struct bgp_local {
 };
 
 
-struct bgp_peer *bgp_create_peer(const char *, const int, const char*, struct bgp_peer_group *);
+struct bgp_peer *bgp_create_peer(const char *, const int, const char*);
 int bgp_destroy_peer(struct bgp_peer *);
 
 int bgp_connect(struct bgp_peer *);

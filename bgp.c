@@ -18,6 +18,7 @@
 
 #include "bgp.h"
 
+//Index matches the BGP message code
 char *bgp_msg_code[] = {
     "<Reserved>",
     "OPEN",
@@ -27,6 +28,7 @@ char *bgp_msg_code[] = {
     "ROUTE-REFRESH"
 };
 
+//Index matches the path attribute code
 char *pa_type_code[] = {
     "<Reserved>",
     "ORIGIN",
@@ -38,6 +40,13 @@ char *pa_type_code[] = {
     "AGGREGATOR"
 };
 
+enum {
+    BGP_IDLE,
+    BGP_ACTIVE,
+    BGP_OPENSENT,
+    BGP_OPENCONFIRM,
+    BGP_ESTABLISHED
+} bgp_fsm_states;
 
 
 struct bgp_msg {
@@ -84,13 +93,9 @@ int bgp_keepalive(struct bgp_peer *);
 
 
 
-struct bgp_peer *bgp_create_peer(const char *ip, const int asn, const char *name, struct bgp_peer_group *group) {
+struct bgp_peer *bgp_create_peer(const char *ip, const int asn, const char *name) {
     struct bgp_peer *bgp_peer;
-    int x;
 
-    //Go through the peer list and find a hole. The peer group should be memset to 0
-    while ( (bgp_peer = group->peer_list[x++]) ) { ; }
-    
     bgp_peer = malloc(sizeof(*bgp_peer));
 
     bgp_peer->ip = malloc((strlen(ip) + 1) * sizeof(*ip));
@@ -105,14 +110,6 @@ struct bgp_peer *bgp_create_peer(const char *ip, const int asn, const char *name
 }
 
 
-int bgp_destroy_peer(struct bgp_peer *bgp_peer) {
-    close(bgp_peer->socket.fd);
-    free(bgp_peer->name);
-    free(bgp_peer->ip);
-    free(bgp_peer);
-
-    return 0;
-}
 
 int bgp_connect(struct bgp_peer *peer) {
     peer->socket.fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -265,6 +262,14 @@ int bgp_loop(struct bgp_peer *peer) {
 }
 
 
+int bgp_destroy_peer(struct bgp_peer *bgp_peer) {
+    close(bgp_peer->socket.fd);
+    free(bgp_peer->name);
+    free(bgp_peer->ip);
+    free(bgp_peer);
+
+    return 0;
+}
 
 static void parse_update(struct bgp_msg message) {
     int withdrawn_len, pa_len, nlri_len;
