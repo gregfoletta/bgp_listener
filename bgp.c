@@ -4,10 +4,9 @@
 #include <stdint.h> 
 #include <unistd.h> 
 #include <errno.h> 
+#include <math.h>
 
 #include <sys/time.h>
- 
-#include <math.h> 
  
 #define TCP_BGP_PORT 179 
  
@@ -40,14 +39,12 @@ char *pa_type_code[] = {
     "AGGREGATOR"
 };
 
-enum {
-    BGP_IDLE,
-    BGP_ACTIVE,
-    BGP_OPENSENT,
-    BGP_OPENCONFIRM,
-    BGP_ESTABLISHED
-} bgp_fsm_states;
-
+typedef enum {
+    OPEN = 1,
+    UPDATE,
+    NOTIFICATION,
+    KEEPALIVE
+} bgp_msg_type;
 
 struct bgp_msg {
     uint16_t length;
@@ -65,7 +62,18 @@ struct bgp_route_chain {
     struct bgp_route_chain *next;
 };
 
-struct bgp_path_attribute {
+struct bgp_tlv {
+    uint8_t type;
+    uint8_t length;
+    uint8_t *value;
+};
+
+struct bgp_tlv_chain {
+    struct bgp_tlv_chain *next;
+    struct bgp_tlv tlv;
+};
+
+struct bgp_pa {
     uint8_t flags;
     uint8_t type;
     uint16_t length;
@@ -74,14 +82,17 @@ struct bgp_path_attribute {
 
 struct bgp_pa_chain {
     struct bgp_pa_chain *next;
-    struct bgp_path_attribute pa;
+    struct bgp_pa pa;
 };
 
 
 //Non-public functions:
-static void parse_update(struct bgp_msg);
+static int parse_update(struct bgp_msg);
+static int parse_open(struct bgp_msg, struct bgp_peer *);
+
 struct bgp_route_chain *extract_routes(int, uint8_t *);
-struct bgp_pa_chain *extract_path_attributes(int, uint8_t *);
+struct bgp_tlv_chain *extract_tlv(uint8_t, uint8_t *);
+struct bgp_pa_chain *extract_path_attributes(uint8_t, uint8_t *);
 
 void bgp_create_header(const short, bgp_msg_type, unsigned char*);
 struct bgp_msg bgp_validate_header(const uint8_t *);
@@ -90,10 +101,7 @@ int bgp_keepalive(struct bgp_peer *);
 
 
 
-
-
-
-struct bgp_peer *bgp_create_peer(const char *ip, const int asn, const char *name) {
+struct bgp_peer *bgp_create_peer(const char *ip, const uint16_t asn, const char *name) {
     struct bgp_peer *bgp_peer;
 
     bgp_peer = malloc(sizeof(*bgp_peer));
@@ -101,7 +109,7 @@ struct bgp_peer *bgp_create_peer(const char *ip, const int asn, const char *name
     bgp_peer->ip = malloc((strlen(ip) + 1) * sizeof(*ip));
     strncpy(bgp_peer->ip, ip, strlen(ip) + 1);
 
-    bgp_peer->asn = asn;
+    bgp_peer->local_asn = asn;
 
     bgp_peer->name = malloc((strlen(name) + 1) * sizeof(*name));
     strncpy(bgp_peer->name, name, strlen(name) + 1);
@@ -245,6 +253,7 @@ int bgp_loop(struct bgp_peer *peer) {
 
         switch (message.type) {
             case OPEN:
+                parse_open(message, peer);
                 bgp_keepalive(peer);
                 break;
             case UPDATE:
@@ -253,6 +262,7 @@ int bgp_loop(struct bgp_peer *peer) {
             case NOTIFICATION:
                 break;
             case KEEPALIVE:
+                bgp_keepalive(peer);
                 break;
             default:
                 break;
@@ -271,7 +281,7 @@ int bgp_destroy_peer(struct bgp_peer *bgp_peer) {
     return 0;
 }
 
-static void parse_update(struct bgp_msg message) {
+static int parse_update(struct bgp_msg message) {
     int withdrawn_len, pa_len, nlri_len;
 
     //body_pos is the current position within the BGP message body
@@ -301,7 +311,48 @@ static void parse_update(struct bgp_msg message) {
     extract_routes(nlri_len, body_pos);
     printf("\n");
 
+    return 0;
+
 }
+
+static int parse_open(struct bgp_msg message, struct bgp_peer *peer) {
+    uint8_t *body_pos = message.body;
+    int opt_param_len;
+
+    //Length must be at least 9 bytes
+    if (message.length < 9) {
+        return -1;
+    }
+
+    peer->version = *(body_pos++);
+
+    peer->remote_asn = *(body_pos++) << 8;
+    peer->remote_asn |= *(body_pos++);
+
+    peer->recv_hold_time = *(body_pos++) << 8;
+    peer->recv_hold_time |= *(body_pos++);
+
+    peer->identifier = *(body_pos++) << 24;
+    peer->identifier |= *(body_pos++) << 16;
+    peer->identifier |= *(body_pos++) << 8;
+    peer->identifier |= *(body_pos++);
+
+    //No optional parameters, we return
+    if (message.length == 9) {
+        return 0;
+    }
+
+    opt_param_len = *(body_pos++);
+    peer->open_parameters = extract_tlv(opt_param_len, body_pos);
+    
+
+    printf("Param Length: %d\n", opt_param_len);
+
+    printf("Version: %d, Remote ASN: %d, Hold Time: %d, Identifier: %d\n", peer->version, peer->remote_asn, peer->recv_hold_time, peer->identifier);
+
+    return 0;
+}
+        
 
 /*
 extract_route()
@@ -344,7 +395,33 @@ struct bgp_route_chain *extract_routes(int length, uint8_t *routes) {
 }
 
 
-struct bgp_pa_chain *extract_path_attributes(int length, uint8_t *attributes) {
+struct bgp_tlv_chain *extract_tlv(uint8_t length, uint8_t *attributes) {
+    struct bgp_tlv_chain *node = NULL;
+
+    printf("TLV Length: %d\n", length);
+
+    if (length <= 0) {
+        return NULL;
+    }
+
+    node = malloc(sizeof(*node));
+    
+    node->tlv.type = *attributes++;
+    node->tlv.length = *attributes++;
+
+    //Copy the attribute
+    node->tlv.value = malloc(sizeof(*node->tlv.value) * node->tlv.length);
+    memcpy(node->tlv.value, attributes, node->tlv.length);
+    attributes += node->tlv.length;
+
+    printf(" { T: %x L: %x V: %x }\n", node->tlv.type, node->tlv.length, *node->tlv.value);
+
+    node->next = extract_tlv(length - (node->tlv.length +2), attributes);
+
+    return node;
+}
+
+struct bgp_pa_chain *extract_path_attributes(uint8_t length, uint8_t *attributes) {
     struct bgp_pa_chain *node = NULL;
 
     if (length <= 0) {
@@ -369,17 +446,15 @@ struct bgp_pa_chain *extract_path_attributes(int length, uint8_t *attributes) {
     return node;
 }
 
-    
-
 
 void bgp_create_header(const short length, bgp_msg_type type, unsigned char *buffer) {
-    uint8_t header_marker[16] = {   0xff, 0xff, 0xff, 0xff,
+    uint8_t header_marker[BGP_HEADER_MARKER_LEN] = {   0xff, 0xff, 0xff, 0xff,
                                     0xff, 0xff, 0xff, 0xff,
                                     0xff, 0xff, 0xff, 0xff,
                                     0xff, 0xff, 0xff, 0xff  };
 
     //Copy the 16 octets of header marker
-    memcpy(buffer, header_marker, 16);
+    memcpy(buffer, header_marker, BGP_HEADER_MARKER_LEN);
 
     //Copy the length
     buffer[16] = length >> 8;
