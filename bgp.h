@@ -25,7 +25,7 @@ struct bgp_peer {
     uint16_t recv_hold_time;
     uint16_t curr_hold_time;
     enum bgp_fsm_states fsm_state;
-    struct bgp_tlv_chain *open_parameters;
+    struct bgp_tlv_list *open_parameters;
     struct bgp_socket socket;
 };
 
@@ -42,6 +42,7 @@ int bgp_destroy_peer(struct bgp_peer *);
 int bgp_connect(struct bgp_peer *);
 int bgp_open(struct bgp_peer *, const struct bgp_local);
 int bgp_loop(struct bgp_peer *);
+void print_bgp_peer_info(const struct bgp_peer *);
 
 void bgp_print_err(char *);
 

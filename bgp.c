@@ -7,6 +7,7 @@
 #include <math.h>
 
 #include <sys/time.h>
+#include <time.h>
  
 #define TCP_BGP_PORT 179 
  
@@ -68,8 +69,8 @@ struct bgp_tlv {
     uint8_t *value;
 };
 
-struct bgp_tlv_chain {
-    struct bgp_tlv_chain *next;
+struct bgp_tlv_list {
+    struct bgp_tlv_list *next;
     struct bgp_tlv tlv;
 };
 
@@ -85,13 +86,17 @@ struct bgp_pa_chain {
     struct bgp_pa pa;
 };
 
+struct bgp_capability_code {
+    uint8_t value;
+    char *description;
+};
 
 //Non-public functions:
 static int parse_update(struct bgp_msg);
 static int parse_open(struct bgp_msg, struct bgp_peer *);
 
 struct bgp_route_chain *extract_routes(int, uint8_t *);
-struct bgp_tlv_chain *extract_tlv(uint8_t, uint8_t *);
+struct bgp_tlv_list *extract_tlv(uint8_t, uint8_t *);
 struct bgp_pa_chain *extract_path_attributes(uint8_t, uint8_t *);
 
 void bgp_create_header(const short, bgp_msg_type, unsigned char*);
@@ -192,6 +197,7 @@ int bgp_loop(struct bgp_peer *peer) {
     int byte_interval;
     int fd_ready;
 
+    time_t time_start, time_finish;
     struct timeval select_wait;
 
     
@@ -204,6 +210,7 @@ int bgp_loop(struct bgp_peer *peer) {
         bytes_read = 0;
         buffer_pos = buffer;
         select_wait = (struct timeval){ 1, 0 };
+        time_start = time(NULL);
 
 
         FD_SET(peer->socket.fd, &select_set);   
@@ -251,6 +258,8 @@ int bgp_loop(struct bgp_peer *peer) {
 
         printf("{ %s }\n", bgp_msg_code[message.type]);
 
+        print_bgp_peer_info(peer);
+
         switch (message.type) {
             case OPEN:
                 parse_open(message, peer);
@@ -267,6 +276,10 @@ int bgp_loop(struct bgp_peer *peer) {
             default:
                 break;
         }
+
+        time_finish = time(NULL);
+
+        printf("Elapsed time: %f\n", difftime(time_finish, time_start));
     }
     return 1;
 }
@@ -395,8 +408,8 @@ struct bgp_route_chain *extract_routes(int length, uint8_t *routes) {
 }
 
 
-struct bgp_tlv_chain *extract_tlv(uint8_t length, uint8_t *attributes) {
-    struct bgp_tlv_chain *node = NULL;
+struct bgp_tlv_list *extract_tlv(uint8_t length, uint8_t *attributes) {
+    struct bgp_tlv_list *node = NULL;
 
     printf("TLV Length: %d\n", length);
 
@@ -482,6 +495,39 @@ struct bgp_msg bgp_validate_header(const uint8_t *header_buffer) {
 }
 
 
+void print_bgp_peer_info(const struct bgp_peer *peer) {
+    struct bgp_tlv_list *open_parameter;
+
+    struct bgp_capability_code code_lookup[] = {
+        { 1, "Multiprotocol Extensions for BGP-4" },
+        { 2, "Route Refresh Capability for BGP-4" },
+        { 3, "Outbound Route Filtering Capability" },
+        { 4, "Multiple routes to a destination capability" },
+        { 5, "Extended Next Hop Encoding" },
+        { 6, "BGP-Extended Message" },
+        { 64, "Graceful Restart Capability" },
+        { 65, "Support for 4-octet AS number capability" },
+        { 66, "Deprecated (2003-03-06)" },
+        { 67, "Support for Dynamic Capability (capability specific)" },
+        { 68, "Multisession BGP Capability" },
+        { 69, "ADD-PATH Capability" },
+        { 70, "Enhanced Route Refresh Capability" },
+        { 71, "Long-Lived Graceful Restart (LLGR) Capability" },
+        { 72, "CP-ORF Capability" },
+        { 73, "FQDN Capability" },
+        { 128, "Old Cisco Route Refresh" },
+    };
+
+    //Traverse the parameter list for the peer and print the matching capabilities
+    printf("Received Capabilites:\n");
+    for (open_parameter = peer->open_parameters; open_parameter != NULL; open_parameter = open_parameter->next) {
+        for (unsigned int x = 0; x < sizeof(code_lookup) / sizeof(struct bgp_capability_code); x++) {
+            if (open_parameter->tlv.value[0] == code_lookup[x].value) {
+                printf(" *%s (%d)\n", code_lookup[x].description, code_lookup[x].value);
+            }   
+        }
+    } 
+}
 
 void bgp_print_err(char *err_message) {
     int error = errno;
