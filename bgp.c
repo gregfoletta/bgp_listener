@@ -94,6 +94,7 @@ struct bgp_capability_code {
 //Non-public functions:
 static int parse_update(struct bgp_msg);
 static int parse_open(struct bgp_msg, struct bgp_peer *);
+static int parse_keepalive(struct bgp_peer *);
 
 struct bgp_route_chain *extract_routes(int, uint8_t *);
 struct bgp_tlv_list *extract_tlv(uint8_t, uint8_t *);
@@ -222,7 +223,9 @@ int bgp_loop(struct bgp_peer *peer) {
             bgp_print_err("select() error");
         } else if (fd_ready == 0) {
             //Select timeout
-            printf("select() timeout\n");
+            time_finish = time(NULL);
+            peer->curr_hold_time -= difftime(time_finish, time_start); //### There's a cast here, need to make sure it's safe
+            printf("Current Hold Time: %d\n", peer->curr_hold_time);
             continue;
         }
 
@@ -271,15 +274,13 @@ int bgp_loop(struct bgp_peer *peer) {
             case NOTIFICATION:
                 break;
             case KEEPALIVE:
+                parse_keepalive(peer);
                 bgp_keepalive(peer);
                 break;
             default:
                 break;
         }
-
-        time_finish = time(NULL);
-
-        printf("Elapsed time: %f\n", difftime(time_finish, time_start));
+        
     }
     return 1;
 }
@@ -345,6 +346,8 @@ static int parse_open(struct bgp_msg message, struct bgp_peer *peer) {
     peer->recv_hold_time = *(body_pos++) << 8;
     peer->recv_hold_time |= *(body_pos++);
 
+    peer->curr_hold_time = peer->recv_hold_time;
+
     peer->identifier = *(body_pos++) << 24;
     peer->identifier |= *(body_pos++) << 16;
     peer->identifier |= *(body_pos++) << 8;
@@ -362,6 +365,12 @@ static int parse_open(struct bgp_msg message, struct bgp_peer *peer) {
     printf("Param Length: %d\n", opt_param_len);
 
     printf("Version: %d, Remote ASN: %d, Hold Time: %d, Identifier: %d\n", peer->version, peer->remote_asn, peer->recv_hold_time, peer->identifier);
+
+    return 0;
+}
+
+static int parse_keepalive(struct bgp_peer *peer) {
+    peer->curr_hold_time = peer->recv_hold_time;
 
     return 0;
 }
