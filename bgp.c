@@ -188,7 +188,8 @@ int bgp_keepalive(struct bgp_peer *peer) {
 }
 
 
-int bgp_loop(struct bgp_peer *peer) {
+void *bgp_loop(void *arg) {
+    struct bgp_peer *peer = arg;
     uint8_t buffer[BGP_MAX_LEN];
     uint8_t *buffer_pos;
 
@@ -225,7 +226,6 @@ int bgp_loop(struct bgp_peer *peer) {
             //Select timeout
             time_finish = time(NULL);
             peer->curr_hold_time -= difftime(time_finish, time_start); //### There's a cast here, need to make sure it's safe
-            printf("Current Hold Time: %d\n", peer->curr_hold_time);
             continue;
         }
 
@@ -234,7 +234,7 @@ int bgp_loop(struct bgp_peer *peer) {
             byte_interval = recv(peer->socket.fd, buffer_pos, BGP_HEADER_LEN - bytes_read, 0);
 
             if (byte_interval <= 0) { 
-                return 0;
+                return NULL;
             }
 
             buffer_pos += byte_interval;
@@ -250,7 +250,7 @@ int bgp_loop(struct bgp_peer *peer) {
         while (bytes_read < message.length - BGP_HEADER_LEN) {
             byte_interval = recv(peer->socket.fd, buffer_pos, (message.length - BGP_HEADER_LEN) - bytes_read, 0);
             if (byte_interval <= 0) {
-                return 0;
+                return NULL;
             }
             buffer_pos += byte_interval;
             bytes_read += byte_interval;
@@ -258,10 +258,6 @@ int bgp_loop(struct bgp_peer *peer) {
 
         //Copy the body to the message
         memcpy(&message.body, buffer, message.length);
-
-        printf("{ %s }\n", bgp_msg_code[message.type]);
-
-        print_bgp_peer_info(peer);
 
         switch (message.type) {
             case OPEN:
@@ -282,7 +278,7 @@ int bgp_loop(struct bgp_peer *peer) {
         }
         
     }
-    return 1;
+    return NULL;
 }
 
 
@@ -323,7 +319,6 @@ static int parse_update(struct bgp_msg message) {
     }
 
     extract_routes(nlri_len, body_pos);
-    printf("\n");
 
     return 0;
 
@@ -362,9 +357,7 @@ static int parse_open(struct bgp_msg message, struct bgp_peer *peer) {
     peer->open_parameters = extract_tlv(opt_param_len, body_pos);
     
 
-    printf("Param Length: %d\n", opt_param_len);
 
-    printf("Version: %d, Remote ASN: %d, Hold Time: %d, Identifier: %d\n", peer->version, peer->remote_asn, peer->recv_hold_time, peer->identifier);
 
     return 0;
 }
@@ -406,11 +399,7 @@ struct bgp_route_chain *extract_routes(int length, uint8_t *routes) {
 
     memcpy(node->route.network, routes , net_len); 
 
-    printf("  { %d.%d.%d.%d/%d ", node->route.network[0], node->route.network[1], node->route.network[2], node->route.network[3], node->route.prefix);
-    printf("(%x %x %x %x %x) }\n", node->route.network[0], node->route.network[1], node->route.network[2], node->route.network[3], node->route.prefix);
-    
     //Decrease the length of routes (1 byte for the prefix len + length of the network)
-
     node->next = extract_routes(length - (1 + net_len), routes + net_len);
 
     return node->next;
@@ -419,8 +408,6 @@ struct bgp_route_chain *extract_routes(int length, uint8_t *routes) {
 
 struct bgp_tlv_list *extract_tlv(uint8_t length, uint8_t *attributes) {
     struct bgp_tlv_list *node = NULL;
-
-    printf("TLV Length: %d\n", length);
 
     if (length <= 0) {
         return NULL;
@@ -435,8 +422,6 @@ struct bgp_tlv_list *extract_tlv(uint8_t length, uint8_t *attributes) {
     node->tlv.value = malloc(sizeof(*node->tlv.value) * node->tlv.length);
     memcpy(node->tlv.value, attributes, node->tlv.length);
     attributes += node->tlv.length;
-
-    printf(" { T: %x L: %x V: %x }\n", node->tlv.type, node->tlv.length, *node->tlv.value);
 
     node->next = extract_tlv(length - (node->tlv.length +2), attributes);
 
@@ -460,8 +445,6 @@ struct bgp_pa_chain *extract_path_attributes(uint8_t length, uint8_t *attributes
     node->pa.value = malloc(sizeof(node->pa.value) * node->pa.length);
     memcpy(node->pa.value, attributes, node->pa.length);
     attributes += node->pa.length;
-
-    printf(" { F: %x T: %s L: %x }\n", node->pa.flags, pa_type_code[node->pa.type], node->pa.length);
 
     node->next = extract_path_attributes(length - node->pa.length - 3, attributes);
 
@@ -504,7 +487,8 @@ struct bgp_msg bgp_validate_header(const uint8_t *header_buffer) {
 }
 
 
-void print_bgp_peer_info(const struct bgp_peer *peer) {
+int print_bgp_peer_info(void *arg) {
+    struct bgp_peer *peer = arg;
     struct bgp_tlv_list *open_parameter;
 
     struct bgp_capability_code code_lookup[] = {
@@ -528,7 +512,6 @@ void print_bgp_peer_info(const struct bgp_peer *peer) {
     };
 
     //Traverse the parameter list for the peer and print the matching capabilities
-    printf("Received Capabilites:\n");
     for (open_parameter = peer->open_parameters; open_parameter != NULL; open_parameter = open_parameter->next) {
         for (unsigned int x = 0; x < sizeof(code_lookup) / sizeof(struct bgp_capability_code); x++) {
             if (open_parameter->tlv.value[0] == code_lookup[x].value) {
@@ -536,6 +519,8 @@ void print_bgp_peer_info(const struct bgp_peer *peer) {
             }   
         }
     } 
+
+    return 0;
 }
 
 void bgp_print_err(char *err_message) {
