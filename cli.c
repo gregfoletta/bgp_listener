@@ -47,16 +47,10 @@ int cli_commandlist_add(struct cli_command_list **head, char *command, int (*act
 
     /* Is the head allocated already? If not, add the new entry */
     if (*head == NULL) {
-        printf("Headr not allocated..., allocating for %s\n", command);
         *head = new;
     }
     else {
-        iterate = *head;
-        printf("Current head command: %s\n", (*head)->command);
-
-        while (iterate->next != NULL) {
-            iterate = iterate->next;
-        }
+        for (iterate = *head; iterate->next != NULL; iterate = iterate->next) { ; }
         iterate->next = new;
     }
 
@@ -82,7 +76,7 @@ int cli_print_commands(struct cli_command_list *list) {
 
 
 
-int cli_read_loop(struct cli_command_list *command_list) {
+int cli_read_loop(struct cli_command_list *command_list, void *arg) {
     int input;
     char *prefix = "\ncli> ";
     char buffer[LINE_BUFFER];
@@ -114,7 +108,7 @@ int cli_read_loop(struct cli_command_list *command_list) {
 
             while (iterate != NULL) {
                 if (strcmp(iterate->command, buffer) == 0) {
-                    iterate->func("Matching command");
+                    iterate->func(arg);
                 }
                 iterate = iterate->next; 
             }
