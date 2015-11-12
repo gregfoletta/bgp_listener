@@ -53,13 +53,8 @@ struct bgp_msg {
     uint8_t body[BGP_MAX_LEN - BGP_HEADER_LEN];
 };
 
-struct bgp_ipv4_route {
-    uint8_t network[4];
-    uint8_t prefix;
-};
-
 struct bgp_route_chain {
-    struct bgp_ipv4_route route;
+    uint8_t *route;                 //Of the form prefix_len(1), prefix(var)
     struct bgp_route_chain *next;
 };
 
@@ -92,7 +87,7 @@ struct bgp_capability_code {
 };
 
 //Non-public functions:
-static int parse_update(struct bgp_msg);
+static int parse_update(struct bgp_msg, struct bgp_peer *);
 static int parse_open(struct bgp_msg, struct bgp_peer *);
 static int parse_keepalive(struct bgp_peer *);
 
@@ -265,7 +260,7 @@ void *bgp_loop(void *arg) {
                 bgp_keepalive(peer);
                 break;
             case UPDATE:
-                parse_update(message);
+                parse_update(message, peer);
                 break;
             case NOTIFICATION:
                 break;
@@ -291,7 +286,7 @@ int bgp_destroy_peer(struct bgp_peer *bgp_peer) {
     return 0;
 }
 
-static int parse_update(struct bgp_msg message) {
+static int parse_update(struct bgp_msg message, struct bgp_peer *peer) {
     int withdrawn_len, pa_len, nlri_len;
 
     //body_pos is the current position within the BGP message body
@@ -303,7 +298,7 @@ static int parse_update(struct bgp_msg message) {
 
     
     if (withdrawn_len > 0) {
-        extract_routes(withdrawn_len, body_pos);
+        peer->pending_withdrawn = extract_routes(withdrawn_len, body_pos);
         body_pos += withdrawn_len;
     }
 
@@ -317,8 +312,6 @@ static int parse_update(struct bgp_msg message) {
         extract_path_attributes(pa_len, body_pos);
         body_pos += pa_len;
     }
-
-    extract_routes(nlri_len, body_pos);
 
     return 0;
 
@@ -379,30 +372,27 @@ all of the routes in the update
 */
 struct bgp_route_chain *extract_routes(int length, uint8_t *routes) {
     struct bgp_route_chain *node = NULL;
-    int net_len;
+    int prefix_length, net_length;
 
     if (length <= 0) {
         return NULL;
     }
 
-   
-    //Allocate the node, set the prefix length and increment the pointer.
-    node = malloc(sizeof(*node));
-    node->route.prefix = *routes++;
-
-
-    if (node->route.prefix > 32) {
-        bgp_print_err("bgp_route_chain(): prefix length > 32");
+    prefix_length = *routes;
+    if (prefix_length > 32 || prefix_length < 0) {
+        bgp_print_err("bgp_route_chain(): invalid prefix length");
     }
 
-    net_len = ceil((float) node->route.prefix / 8);
+    net_length = ceil((float) prefix_length / 8);
 
-    memcpy(node->route.network, routes , net_len); 
+    node = malloc(sizeof(*node));
+    node->route = malloc((net_length + 1) * sizeof(*(node->route))); //+ 1 is the 1 byte prefix.
+    memcpy(node->route, routes, net_length + 1);
 
     //Decrease the length of routes (1 byte for the prefix len + length of the network)
-    node->next = extract_routes(length - (1 + net_len), routes + net_len);
+    node->next = extract_routes(length - (1 + net_length), routes + (net_length + 1));
 
-    return node->next;
+    return node;
 }
 
 
@@ -522,6 +512,23 @@ int print_bgp_peer_info(void *arg) {
 
     return 0;
 }
+
+int print_bgp_pending_withdrawn(void *arg) {
+    struct bgp_peer *peer = arg;
+    struct bgp_route_chain *iterate;
+
+    printf("Pending withdrawn routes:\n");
+    for (iterate = peer->pending_withdrawn; iterate != NULL; iterate = iterate->next) {
+        printf("%d - %d %d\n", iterate->route[0],iterate->route[1],iterate->route[2]);\
+    }
+    
+    return 0;
+}
+
+
+
+
+
 
 void bgp_print_err(char *err_message) {
     int error = errno;
