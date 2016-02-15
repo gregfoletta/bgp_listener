@@ -78,7 +78,8 @@ int cli_print_commands(struct cli_command_list *list) {
 
 int cli_read_loop(struct cli_command_list *command_list, void *arg) {
     int input;
-    char *prefix = "\ncli> ";
+    int cmd_found = 0;
+    char *prefix = "cli> ";
     char buffer[LINE_BUFFER];
     int cursor_pos = 0;
     struct cli_command_list *iterate;
@@ -109,8 +110,13 @@ int cli_read_loop(struct cli_command_list *command_list, void *arg) {
             while (iterate != NULL) {
                 if (strcmp(iterate->command, buffer) == 0) {
                     iterate->func(arg);
+                    cmd_found = 1;
                 }
                 iterate = iterate->next; 
+            }
+
+            if (!cmd_found) { 
+                printf("Command not found\n"); 
             }
 
             cursor_pos = 0;
