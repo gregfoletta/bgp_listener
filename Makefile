@@ -1,21 +1,14 @@
-CC=c99
-CFLAGS=-c -Wall -Wextra -g
+CC   := gcc
+src = $(wildcard *.c)
+obj = $(src:.c=.o)
+CFLAGS += -Wall -Wextra -g -std=gnu99
+LDFLAGS = -lm -pthread
 
-all: bgp_listener
+bgp_listener: $(obj)
+	$(CC) -o $@ $^ $(LDFLAGS)
 
-bgp_listener: main.o bgp.o cli.o debug.o
-	$(CC) -pthread main.o bgp.o cli.o debug.o -o bgp_listener -lm
+.PHONY: clean
+clean:
+	rm -f $(obj) myprog
 
-main.o: main.c 
-	$(CC) $(CFLAGS) main.c
 
-bgp.o: bgp.c bgp.h
-	$(CC) $(CFLAGS) bgp.c
-
-cli.o: cli.c cli.h
-	$(CC) $(CFLAGS) cli.c
-
-debug.o: debug.c debug.h
-	$(CC) $(CFLAGS) debug.c
-clean:  	
-	rm -rf *.o bgp_listener
