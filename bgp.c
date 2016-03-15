@@ -146,6 +146,7 @@ static void parse_keepalive(struct bgp_peer *, struct bgp_msg *);
 
 void *bgp_rw_thread(void *);
 int bgp_read_msg(struct bgp_peer *);
+int bgp_send_msg(struct bgp_peer *);
 void *bgp_util_thread(void *);
 
 struct bgp_route_chain *extract_routes(int, uint8_t *);
@@ -209,6 +210,10 @@ void *bgp_rw_thread(void *param) {
             continue;
         }
         if (bgp_read_msg(peer) < 0) {
+            return NULL;
+        }
+
+        if (bgp_send_msg(peer) < 0) {
             return NULL;
         }
     }
@@ -300,7 +305,7 @@ int bgp_connect(struct bgp_peer *peer) {
 }
 
 
-int bgp_open(struct bgp_peer *peer) {
+int _bgp_open(struct bgp_peer *peer) {
     uint8_t open_buffer[BGP_MAX_LEN];
     int open_buffer_pos = BGP_HEADER_LEN;
 
@@ -388,6 +393,21 @@ int bgp_read_msg(struct bgp_peer *peer) {
     return 0;
 }
 
+int bgp_send_msg(struct bgp_peer *peer) {
+    struct list_head *i;
+    struct bgp_msg *message;
+
+    if (!list_empty(&peer->egress_msg_queue)) {
+            list_for_each(i, &peer->egress_msg_queue) {
+                message = list_entry(i, struct bgp_msg, list);
+                send(peer->socket.fd, message->raw, ntohs(message->length), 0);
+            }
+    }
+
+    return 0;
+}
+
+
 
 int bgp_destroy_peer(struct bgp_peer *bgp_peer) {
     close(bgp_peer->socket.fd);
@@ -432,6 +452,7 @@ static void parse_open(struct bgp_peer *peer, struct bgp_msg *message) {
 
     return;
 }
+
 
 static void parse_update(struct bgp_peer *peer, struct bgp_msg *message) {
     int withdrawn_len, pa_len;
@@ -556,10 +577,10 @@ struct bgp_pa_chain *extract_path_attributes(uint8_t length, uint8_t *attributes
 
 
 void bgp_create_header(const short length, enum bgp_msg_type type, unsigned char *buffer) {
-    uint8_t header_marker[BGP_HEADER_MARKER_LEN] = {   0xff, 0xff, 0xff, 0xff,
-                                    0xff, 0xff, 0xff, 0xff,
-                                    0xff, 0xff, 0xff, 0xff,
-                                    0xff, 0xff, 0xff, 0xff  };
+    uint8_t header_marker[] = { 0xff, 0xff, 0xff, 0xff,
+                                0xff, 0xff, 0xff, 0xff,
+                                0xff, 0xff, 0xff, 0xff,
+                                0xff, 0xff, 0xff, 0xff  };
 
     //Copy the 16 octets of header marker
     memcpy(buffer, header_marker, BGP_HEADER_MARKER_LEN);
