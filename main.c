@@ -9,39 +9,58 @@
 #include "debug.h"
 
 
-int test_func(void *);
+int quit_func(int, char **, void *);
+int change_debug_level(int, char **, void *);
 
 int main(int argc, char **argv) {
     struct bgp_peer *peer_1;
     struct cli_command_list *list = NULL;
-
-    debug_enable();
-   
-    DEBUG_PRINT("Adding functioins to the CLI list\n");
-    cli_commandlist_add(&list, "show peer", print_bgp_peer_info);
-    cli_commandlist_add(&list, "show withdrawn", print_bgp_pending_withdrawn);
 
     if (argc < 2) {
         printf("Usage: bgp_listener <remote_ip> <remote_as>\n");
         exit(0);
     }
 
+    debug_enable();
+   
+    DEBUG_PRINT("Adding functioins to the CLI list\n");
+    cli_commandlist_add(&list, "quit", quit_func);
+    cli_commandlist_add(&list, "debug", change_debug_level);
+
     peer_1 = bgp_create_peering(argv[1], atoi(argv[2]), 65000, 0x01010101, 120, "Remote_Peer");
-
     bgp_activate(peer_1);
-
-    /* bgp_connect(peer_1);
-    bgp_open(peer_1, local_info);
-
-    if (pthread_create(&(peer_1->thread), NULL, bgp_loop, peer_1) != 0) {
-        bgp_print_err("pthread_create() failed");
-        return 0;
-    } */
-
     cli_read_loop(list, peer_1);
-
+    cli_free(list);
     bgp_destroy_peer(peer_1);
 
     return 0;
 }
+
+
+int quit_func(int argc, char **argv, void *data) { return -1; }
+
+int change_debug_level(int argc, char **argv, void *data) { 
+    if (argc < 2) {
+        printf("%s requires an argument\n", argv[0]);
+        return 0; 
+    }
+
+    switch (atoi(argv[1])) {
+    case 0:
+        printf("Disabling Debug\n");
+        debug_disable();
+        break;
+    case 1:
+        printf("Enabling Debug\n");
+        debug_enable();
+        break;
+    default:
+        printf("Unkown Argument\n");
+    }
+    return 0;
+}
+
+
+
+
 
