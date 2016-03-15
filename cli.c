@@ -9,10 +9,21 @@
 #define EOT 0x4
 
 #define LINE_BUFFER 510
+#define MAX_ARGS 3 
+
+#define CMDRETEXIT -1
+#define CMDNOTENTERED -2
+#define CMDNOTFOUND -3
+
+struct cli_command_list {
+    char *command;
+    int (*func)(int, char **, void *); 
+    struct cli_command_list *next;
+};
 
 int toggle_stdin_raw(void);
-int cli_print_commands(struct cli_command_list *);
-
+int print_commands(struct cli_command_list *);
+int tokenise_and_execute(struct cli_command_list *, char *, void *);
 
 
 int toggle_stdin_raw(void) {
@@ -33,9 +44,8 @@ int toggle_stdin_raw(void) {
 
 
 
-int cli_commandlist_add(struct cli_command_list **head, char *command, int (*action)(void *)) {
+int cli_commandlist_add(struct cli_command_list **head, char *command, int (*action)(int, char **, void *)) {
     struct cli_command_list *iterate, *new;
-
 
     //Create the new command struct and members
     new = malloc(sizeof(*new));
@@ -61,7 +71,7 @@ int cli_commandlist_add(struct cli_command_list **head, char *command, int (*act
 
 
 
-int cli_print_commands(struct cli_command_list *list) {
+int print_commands(struct cli_command_list *list) {
     struct cli_command_list *iterate = list;
     printf("Available commands:\n");
 
@@ -76,24 +86,24 @@ int cli_print_commands(struct cli_command_list *list) {
 
 
 
-int cli_read_loop(struct cli_command_list *command_list, void *arg) {
+
+
+
+int cli_read_loop(struct cli_command_list *command_list, void *data) {
     int input;
-    int cmd_found = 0;
     char *prefix = "cli> ";
     char buffer[LINE_BUFFER];
     int cursor_pos = 0;
-    struct cli_command_list *iterate;
 
     buffer[cursor_pos] = '\0';
     toggle_stdin_raw();
 
     fputs(prefix, stdout);
 
-
     while ((input = getchar()) != EOT) {
         switch (input) {
         case '?':
-            cli_print_commands(command_list);
+            print_commands(command_list);
             fputs(prefix, stdout);
             continue;
         case 0x7f: //Backspace
@@ -105,24 +115,17 @@ int cli_read_loop(struct cli_command_list *command_list, void *arg) {
             continue;
         case 0xa: //Enter
             fputs("\n", stdout);
-            iterate = command_list;
-
-            while (iterate != NULL) {
-                if (strcmp(iterate->command, buffer) == 0) {
-                    iterate->func(arg);
-                    cmd_found = 1;
-                }
-                iterate = iterate->next; 
+            switch (tokenise_and_execute(command_list, buffer, data)) {
+            case CMDRETEXIT:
+                return 0;
+            case CMDNOTFOUND: //Note: we don't break out of this
+                fputs("Command not found\n", stdout);
+            default:
+                cursor_pos = 0;
+                buffer[cursor_pos]= '\0';
+                fputs(prefix, stdout);
+                continue;
             }
-
-            if (!cmd_found) { 
-                printf("Command not found\n"); 
-            }
-
-            cursor_pos = 0;
-            buffer[cursor_pos]= '\0';
-            fputs(prefix, stdout);
-            continue;
         default:
             if (cursor_pos >= LINE_BUFFER - 1 || (input < ' ' || input > '~')) {
                 continue;
@@ -135,6 +138,53 @@ int cli_read_loop(struct cli_command_list *command_list, void *arg) {
     }
     return 0;
 }
+
+int cli_free(struct cli_command_list *cmd_list) {
+    struct cli_command_list *curr, *prev;
+
+    curr = cmd_list;
+    while (curr != NULL) {
+        prev = curr;
+        free(curr->command);
+        curr = curr->next;
+        free(prev);
+    }
+
+    return 0;
+}
+
+
+int tokenise_and_execute(struct cli_command_list *command_list, char *buffer, void *data) {
+    int argc = 0;
+    char *argv[MAX_ARGS];
+    struct cli_command_list *iterate;
+
+    argv[0] = strtok(buffer, " ");
+    if (argv[0] == NULL) {
+        //No command
+        return CMDNOTENTERED;
+    }
+    argc++;
+
+    while ((argv[argc] = strtok(NULL, " ")) != NULL) {
+        argc++;
+        if (argc == MAX_ARGS) {
+            break;
+        }
+    }
+
+    iterate = command_list;
+    while (iterate != NULL) {
+        if (strcmp(argv[0], iterate->command) == 0) {
+            return iterate->func(argc, argv, data);
+        }
+        iterate = iterate->next;
+    }
+    //Command not found
+    return CMDNOTFOUND;
+}
+
+
 
 
 
