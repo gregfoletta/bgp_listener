@@ -175,7 +175,7 @@ int tokenise_and_execute(struct cli_command_list *command_list, char *buffer, vo
 
     iterate = command_list;
     while (iterate != NULL) {
-        if (strcmp(argv[0], iterate->command) == 0) {
+        if (memcmp(argv[0], iterate->command, strlen(argv[0])) == 0) {
             return iterate->func(argc, argv, data);
         }
         iterate = iterate->next;
