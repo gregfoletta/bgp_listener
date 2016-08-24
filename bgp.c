@@ -15,6 +15,7 @@
  
 #define BGP_HEADER_LEN 19 
 #define BGP_HEADER_MARKER_LEN 16 
+#define BGP_OPEN_HEADER_LEN 10 
 //First byte after BGP header, same as length of header. 
 #define BGP_MAX_LEN 4096 
 
@@ -22,6 +23,7 @@
 #include "debug.h"
 #include "list.h"
 #include "tcp_client.h"
+#include "byte_conv.h"
 
 enum bgp_fsm_states { 
     BGP_IDLE, 
@@ -88,20 +90,17 @@ char *pa_type_code[] = {
     "AGGREGATOR"
 };
 
-struct __attribute__((packed)) bgp_msg {
-    union {
-        uint8_t raw[BGP_MAX_LEN];
 
-        struct {
-            uint8_t marker[BGP_HEADER_MARKER_LEN];
-            uint16_t length;
-            uint8_t type;
-            uint8_t msg_body[BGP_MAX_LEN - BGP_HEADER_LEN];
-        };
-    };
+struct bgp_msg {
+    unsigned char *raw;               //Pointer to the start of the message
+    unsigned char *header;            //Pointer to the start of the header (after the 16 bytes of 0xff)
+    unsigned char *data;              //Pointer to the beginning of the message (after the BGP header)
 
     struct list_head list;
 };
+
+#define MSG_LENGTH(x) (uchar_be_to_uint16(x->raw + BGP_HEADER_MARKER_LEN)) //Length is the first two bytes after the marker
+#define MSG_TYPE(x) (uchar_to_uint8(x->raw + BGP_HEADER_MARKER_LEN + 2)) //Type is the next byte after the length
 
 
 struct bgp_route_chain {
@@ -138,11 +137,17 @@ struct bgp_capability_code {
 };
 
 //Non-public functions:
-void parse_message(struct bgp_peer *, struct bgp_msg *);
+static void parse_message(struct bgp_peer *, struct bgp_msg *);
 static void parse_open(struct bgp_peer *, struct bgp_msg *);
 static void parse_update(struct bgp_peer *, struct bgp_msg *);
 static void parse_notification(struct bgp_peer *, struct bgp_msg *);
 static void parse_keepalive(struct bgp_peer *, struct bgp_msg *);
+
+struct bgp_msg *alloc_bgp_msg(const uint16_t length, enum bgp_msg_type type);
+struct bgp_msg *create_bgp_open(struct bgp_peer *peer);
+void queue_bgp_open(struct bgp_peer *);
+struct bgp_msg *create_bgp_keepalive(struct bgp_peer *);
+
 
 void *bgp_rw_thread(void *);
 int bgp_read_msg(struct bgp_peer *);
@@ -153,10 +158,8 @@ struct bgp_route_chain *extract_routes(int, uint8_t *);
 struct bgp_tlv_list *extract_tlv(uint8_t, uint8_t *);
 struct bgp_pa_chain *extract_path_attributes(uint8_t, uint8_t *);
 
-void bgp_create_header(const short, enum bgp_msg_type, unsigned char*);
-int validate_header(const struct bgp_msg *);
+int validate_header(const uint8_t *); 
 
-int bgp_keepalive(struct bgp_peer *);
 
 
 
@@ -175,6 +178,7 @@ struct bgp_peer *bgp_create_peering(const char *peer_ip, const uint16_t peer_asn
     strncpy(bgp_peer->peer_ip, peer_ip, strlen(peer_ip) + 1);
     strncpy(bgp_peer->name, peer_name, strlen(peer_name) + 1);
 
+    bgp_peer->version = 0x04;
     bgp_peer->local_asn = local_asn;
     bgp_peer->peer_asn = peer_asn;
     bgp_peer->local_rid = local_rid;
@@ -191,8 +195,8 @@ int bgp_activate(struct bgp_peer *peer) {
         bgp_print_err("Unable to create RW thread");
     }
 
-    if (pthread_create(&peer->rw_thread, NULL, bgp_util_thread, peer) != 0) {
-        bgp_print_err("Unable to create RW thread");
+    if (pthread_create(&peer->util_thread, NULL, bgp_util_thread, peer) != 0) {
+        bgp_print_err("Unable to create util thread");
     }
 
     return 1;
@@ -205,15 +209,23 @@ void *bgp_rw_thread(void *param) {
 
     while (1) {
         if (peer->fsm_state == BGP_IDLE) {
-            DEBUG_PRINT("Peer %s is BGP_IDLE, sleeping RW thread for 1 seconds\n", peer->peer_ip);
-            sleep(1);
+            DEBUG_PRINT("Peer is BGP_IDLE, attempting to connect\n");
+            if ((peer->socket.fd = tcp_connect(peer->peer_ip, "bgp")) != 0) {
+                DEBUG_PRINT("Peer is connected on fd %d\n", peer->socket.fd);
+                peer->fsm_state = BGP_CONNECT;
+                queue_bgp_open(peer);
+                continue;
+            }
+
+            DEBUG_PRINT("Connection to %s timed out... retrying\n", peer->peer_ip);
             continue;
         }
         if (bgp_read_msg(peer) < 0) {
+            DEBUG_PRINT("bgp_read_msg returned an error\n");
             return NULL;
         }
-
         if (bgp_send_msg(peer) < 0) {
+            DEBUG_PRINT("bgp_send_msg returned an error\n");
             return NULL;
         }
     }
@@ -225,15 +237,11 @@ void *bgp_util_thread(void *param) {
     DEBUG_PRINT("UTIL Thread Active\n");
     struct bgp_peer *peer = param;
     struct bgp_msg *message;
+    struct timespec time_start, time_end;
 
     while (1) {
-        //Check to see if the peer is idle - if it is then we attempt a connection.
-        if (peer->fsm_state == BGP_IDLE) {
-            DEBUG_PRINT("Peer is BGP_IDLE, attempting to connect\n");
-            if ((peer->socket.fd = tcp_connect(peer->peer_ip, "bgp")) != 0) {
-                DEBUG_PRINT("Peer is connected on fd %d\n", peer->socket.fd);
-                peer->fsm_state = BGP_CONNECT;
-            }
+        if (clock_gettime(CLOCK_MONOTONIC_RAW, &time_start) != 0) {
+            bgp_print_err("clock_gettime() error");
         }
 
         if (!list_empty(&peer->ingress_msg_queue)) {
@@ -241,7 +249,7 @@ void *bgp_util_thread(void *param) {
             list_for_each(i, &peer->ingress_msg_queue) {
                 message = list_entry(i, struct bgp_msg, list);
                 parse_message(peer, message);
-                if (message->type == 3) {
+                if (MSG_TYPE(message) == 3) {
                     return NULL;
                 }
                 list_del(i);
@@ -249,32 +257,34 @@ void *bgp_util_thread(void *param) {
             }
         }
 
-        DEBUG_PRINT("No message in ingress queue, sleeping\n");
-        sleep(5);
-    }
+        sleep(1);
+
+        if (clock_gettime(CLOCK_MONOTONIC_RAW, &time_end) != 0) {
+            bgp_print_err("clock_gettime() error");
+        }}
+
     return NULL;
 }
 
 
-void parse_message(struct bgp_peer *peer, struct bgp_msg *message) {
-    DEBUG_PRINT("Peer %s received message %d\n", peer->peer_ip, message->type);
-
-    //Array of function pointers to our parse_* functions, keyed by their (message type - 1).
-    void (*parse_function[4])(struct bgp_peer *, struct bgp_msg *) = 
-    {
-        parse_open,
-        parse_update,
-        parse_notification,
-        parse_keepalive
-    };
-
-    if (validate_header(message)) {
-        return;
+static void parse_message(struct bgp_peer *peer, struct bgp_msg *message) {
+    switch (MSG_TYPE(message)) {
+        case 1:
+            parse_open(peer, message);
+            break;
+        case 2:
+            parse_update(peer, message);
+            break;
+        case 3:
+            parse_notification(peer, message);
+            break;
+        case 4:
+            parse_keepalive(peer, message);
+            break;
+        default:
+            DEBUG_PRINT("Error: unknown message type %d\n", MSG_TYPE(message));
+            exit(1);
     }
-
-    //Call the parse function
-    DEBUG_PRINT("Parsing message {%s}\n", bgp_msg_code[message->type]);
-    parse_function[message->type - 1](peer, message);
 }
 
 
@@ -305,51 +315,56 @@ int bgp_connect(struct bgp_peer *peer) {
 }
 
 
-int _bgp_open(struct bgp_peer *peer) {
-    uint8_t open_buffer[BGP_MAX_LEN];
-    int open_buffer_pos = BGP_HEADER_LEN;
+struct bgp_msg *create_bgp_open(struct bgp_peer *peer) {
+    struct bgp_msg *message;
+    const int open_msg_data_len = 10; //Length with no parameters is 10;
+    unsigned char *pos;
 
-    //BGP Version, starting after header
-    open_buffer[open_buffer_pos++] = 0x4;
-    
-    //Our ASN
-    open_buffer[open_buffer_pos++] = peer->local_asn >> 8;
-    open_buffer[open_buffer_pos++] = peer->local_asn & 0xff;
+    message = alloc_bgp_msg(open_msg_data_len, OPEN);
+    pos = message->data;
 
-    //Holdtime
-    open_buffer[open_buffer_pos++] = peer->conf_hold_time >> 8;
-    open_buffer[open_buffer_pos++] = peer->conf_hold_time & 0xff;
-
-    //BGP Identifier
-    open_buffer[open_buffer_pos++] = peer->local_rid >> 24;
-    open_buffer[open_buffer_pos++] = peer->local_rid >> 16; 
-    open_buffer[open_buffer_pos++] = peer->local_rid >> 8;
-    open_buffer[open_buffer_pos++] = peer->local_rid & 0xff;
-
+    uint8_to_uchar_inc(&pos, peer->version);
+    uint16_to_uchar_be_inc(&pos, peer->local_asn);
+    uint16_to_uchar_be_inc(&pos, peer->conf_hold_time); 
+    uint32_to_uchar_be_inc(&pos, peer->local_rid);
+     
     //Param length
-    open_buffer[open_buffer_pos++] = 0x0;
+    uint8_to_uchar_inc(&pos, 0x00);
 
-    bgp_create_header(open_buffer_pos, OPEN, open_buffer);
-
-    send(peer->socket.fd, open_buffer, open_buffer_pos, 0);
-
-    return 1;
+    return message;
 }
 
-int bgp_keepalive(struct bgp_peer *peer) {
-    uint8_t ka_buffer[BGP_HEADER_LEN];
+void queue_bgp_open(struct bgp_peer *peer) {
+    struct bgp_msg *open;
 
-    bgp_create_header(BGP_HEADER_LEN, KEEPALIVE, ka_buffer); 
+    open = create_bgp_open(peer);
+    list_add(&open->list, &peer->egress_msg_queue);
+}
 
-    send(peer->socket.fd, ka_buffer, BGP_HEADER_LEN, 0);
+struct bgp_msg *create_bgp_keepalive(struct bgp_peer *peer) {
+    struct bgp_msg *keepalive;
 
-    return 1;
+    keepalive = alloc_bgp_msg(0, KEEPALIVE); //Keepalve has no data
+
+    return keepalive;
+}
+
+void queue_bgp_keepalive(struct bgp_peer *peer) {
+    struct bgp_msg *keepalive;
+    keepalive = create_bgp_keepalive(peer);
+    list_add(&keepalive->list, &peer->egress_msg_queue);
 }
 
 
 int bgp_read_msg(struct bgp_peer *peer) {
     struct bgp_msg *message;
+    uint8_t header[BGP_HEADER_LEN];
+    uint16_t length;
+    enum bgp_msg_type type;
+
+    uint8_t *pos;
     int ret, fd_ready;
+
     struct timeval select_wait = { 1, 0 };
 
     //Set up the select() set  
@@ -367,25 +382,33 @@ int bgp_read_msg(struct bgp_peer *peer) {
         return 0;
     }
 
-    message = malloc(sizeof(*message));
-    if (!message) {
-        bgp_print_err("Unable to allocate space for incoming BGP message\n");
+    //We first read enough to get the header of the message
+    ret = recv(peer->socket.fd, header, BGP_HEADER_LEN, MSG_WAITALL);
+    if (ret < 0) { //TODO: Take into account EOF and -1
         return -1;
     }
 
-    //We first read enough to get the header of the message
-    ret = recv(peer->socket.fd, message->raw, BGP_HEADER_LEN, MSG_WAITALL);
-    if (ret <= 0) { //TODO: Take into account EOF and -1
+    if (validate_header(header) < 0) {
         return -1;
     }
-    DEBUG_PRINT("Read %d bytes of header\n", ret);
-   
-    //Read in the rest of the body
-    ret = recv(peer->socket.fd, message->raw + BGP_HEADER_LEN, ntohs(message->length) - BGP_HEADER_LEN, MSG_WAITALL);
-    if (ret <= 0) {
-          return -1;
+
+    //Pull out the length and the type
+    pos = header + BGP_HEADER_MARKER_LEN;
+    length = uchar_be_to_uint16_inc(&pos);
+    type = uchar_to_uint8(pos); 
+
+    message = alloc_bgp_msg(length, type);
+    memcpy(message->raw, header, BGP_HEADER_LEN);
+
+    DEBUG_PRINT("Message Received (L: %d, T: %d)\n", MSG_LENGTH(message), MSG_TYPE(message));
+
+    //Keepalives have no body
+    if (MSG_LENGTH(message) - BGP_HEADER_LEN > 0) {
+        ret = recv(peer->socket.fd, message->data, MSG_LENGTH(message) - BGP_HEADER_LEN, MSG_WAITALL);
+        if (ret < 0) {
+              return -1;
+        }
     }
-    DEBUG_PRINT("Read %d bytes of body\n", ret);
 
     //Add the message to the ingress queue
     list_add(&message->list, &peer->ingress_msg_queue);
@@ -398,10 +421,13 @@ int bgp_send_msg(struct bgp_peer *peer) {
     struct bgp_msg *message;
 
     if (!list_empty(&peer->egress_msg_queue)) {
-            list_for_each(i, &peer->egress_msg_queue) {
-                message = list_entry(i, struct bgp_msg, list);
-                send(peer->socket.fd, message->raw, ntohs(message->length), 0);
-            }
+        list_for_each(i, &peer->egress_msg_queue) {
+            message = list_entry(i, struct bgp_msg, list);
+            DEBUG_PRINT("Message Sent (L: %d, T: %d)\n", MSG_LENGTH(message), MSG_TYPE(message));
+            send(peer->socket.fd, message->raw, MSG_LENGTH(message), 0);
+            list_del(i);
+            free(message);
+        }
     }
 
     return 0;
@@ -419,36 +445,36 @@ int bgp_destroy_peer(struct bgp_peer *bgp_peer) {
 }
 
 static void parse_open(struct bgp_peer *peer, struct bgp_msg *message) {
-    uint8_t *body_pos = message->raw;
+    uint8_t *pos = message->data;
     int opt_param_len;
 
+    DEBUG_PRINT("Received OPEN\n");
+
     //Length must be at least 9 bytes
-    if (message->length < 9) {
+    if (MSG_LENGTH(message) < 9) {
         return;
     }
 
-    peer->version = *(body_pos++);
 
-    peer->peer_asn = *(body_pos++) << 8;
-    peer->peer_asn |= *(body_pos++);
-
-    peer->recv_hold_time = *(body_pos++) << 8;
-    peer->recv_hold_time |= *(body_pos++);
-
+    peer->version = uchar_to_uint8_inc(&pos);
+    peer->peer_asn = uchar_be_to_uint16_inc(&pos);
+    peer->recv_hold_time = uchar_be_to_uint16_inc(&pos);
     peer->curr_hold_time = peer->recv_hold_time;
+    peer->peer_rid = uchar_be_to_uint32_inc(&pos);
 
-    peer->peer_rid = *(body_pos++) << 24;
-    peer->peer_rid |= *(body_pos++) << 16;
-    peer->peer_rid |= *(body_pos++) << 8;
-    peer->peer_rid |= *(body_pos++);
+    DEBUG_PRINT("(V: %d, ASN: %d, HT: %d, RID: %d)\n", peer->version, peer->peer_asn, peer->recv_hold_time, peer->peer_rid);
+    
+    //TODO: Temp hack. We've already sent an open, let's send a keepalive to confirm the session
+    queue_bgp_keepalive(peer);
 
     //No optional parameters, we return
-    if (message->length == 9) {
+    if (MSG_LENGTH(message) == 9) {
         return;
     }
 
-    opt_param_len = *(body_pos++);
-    peer->open_parameters = extract_tlv(opt_param_len, body_pos);
+    opt_param_len = uchar_to_uint8(&pos);
+    peer->open_parameters = extract_tlv(opt_param_len, pos);
+
 
     return;
 }
@@ -457,6 +483,10 @@ static void parse_open(struct bgp_peer *peer, struct bgp_msg *message) {
 static void parse_update(struct bgp_peer *peer, struct bgp_msg *message) {
     int withdrawn_len, pa_len;
     //int nlri_len;
+    
+    DEBUG_PRINT("Received UPDATE\n");
+
+    return;
 
     //body_pos is the current position within the BGP message body
     uint8_t *body_pos = message->raw;
@@ -481,8 +511,6 @@ static void parse_update(struct bgp_peer *peer, struct bgp_msg *message) {
         extract_path_attributes(pa_len, body_pos);
         body_pos += pa_len;
     }
-
-    return;
 }
 
 static void parse_notification(struct bgp_peer *peer, struct bgp_msg *message) {
@@ -490,9 +518,10 @@ static void parse_notification(struct bgp_peer *peer, struct bgp_msg *message) {
 }
 
 static void parse_keepalive(struct bgp_peer *peer, struct bgp_msg *message) {
-    peer->curr_hold_time = peer->recv_hold_time;
+    struct bgp_msg *keepalive;
 
-    return;
+    keepalive = create_bgp_keepalive(peer);
+    list_add(&keepalive->list, &peer->egress_msg_queue);
 }
         
 
@@ -576,25 +605,33 @@ struct bgp_pa_chain *extract_path_attributes(uint8_t length, uint8_t *attributes
 }
 
 
-void bgp_create_header(const short length, enum bgp_msg_type type, unsigned char *buffer) {
+struct bgp_msg *alloc_bgp_msg(const uint16_t data_len, enum bgp_msg_type type) {
     uint8_t header_marker[] = { 0xff, 0xff, 0xff, 0xff,
                                 0xff, 0xff, 0xff, 0xff,
                                 0xff, 0xff, 0xff, 0xff,
                                 0xff, 0xff, 0xff, 0xff  };
 
-    //Copy the 16 octets of header marker
-    memcpy(buffer, header_marker, BGP_HEADER_MARKER_LEN);
+    struct bgp_msg *message;
+    uint8_t *pos;
 
-    //Copy the length
-    buffer[16] = length >> 8;
-    buffer[17] = length & 0xff;
+    message = malloc(sizeof(*message));
+    message->raw = malloc((BGP_HEADER_LEN + data_len) * sizeof(message->raw));
+    message->header = message->raw + BGP_HEADER_MARKER_LEN;
+    message->data = message->raw + BGP_HEADER_LEN;
 
-    //Copy message type
-    buffer[18] = type;
+    //Copy the 16 bytes of marker
+    memcpy(message->raw, header_marker, BGP_HEADER_MARKER_LEN);
+
+    //Copy the length and the type
+    pos = message->header;
+    uint16_to_uchar_be_inc(&pos, BGP_HEADER_LEN + data_len);
+    uint8_to_uchar(pos, type);
+
+    return message;
 }
 
 
-int validate_header(const struct bgp_msg *message) {
+int validate_header(const uint8_t *header) {
     const char marker[] = { 0xFF, 0xFF, 0xFF, 0xFF,
                             0xFF, 0xFF, 0xFF, 0xFF,
                             0xFF, 0xFF, 0xFF, 0xFF,
@@ -605,16 +642,11 @@ int validate_header(const struct bgp_msg *message) {
     enum bgp_msg_type high_msg_type = NUMBER_OF_MSG_TYPES;
 
     //Check that the marker is correct
-    if(memcmp(message->raw, marker, BGP_HEADER_MARKER_LEN)) {
+    if(memcmp(header, marker, BGP_HEADER_MARKER_LEN)) {
         DEBUG_PRINT("Message has invalid marker\n");
         return -1;
     }
 
-    //Check the message type
-    if (message->type >= high_msg_type || message->type == 0) {
-        DEBUG_PRINT("Message has invalid type\n");
-        return -1;
-    }
     return 0;
 }
 
@@ -662,7 +694,7 @@ int print_bgp_pending_withdrawn(void *arg) {
     printf("Pending withdrawn routes:\n");
     for (iterate = peer->pending_withdrawn; iterate != NULL; iterate = iterate->next) {
         printf("%d - %d %d\n", iterate->route[0],iterate->route[1],iterate->route[2]);\
-    }
+}
     
     return 0;
 }
