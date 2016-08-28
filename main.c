@@ -26,6 +26,7 @@ int main(int argc, char **argv) {
     DEBUG_PRINT("Adding functioins to the CLI list\n");
     cli_commandlist_add(&list, "quit", quit_func);
     cli_commandlist_add(&list, "debug", change_debug_level);
+    cli_commandlist_add(&list, "stats", print_bgp_statistics);
 
     peer_1 = bgp_create_peering(argv[1], atoi(argv[2]), 65000, 0x01010101, 120, "Remote_Peer");
     bgp_activate(peer_1);

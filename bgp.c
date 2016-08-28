@@ -39,6 +39,22 @@ struct bgp_socket {
     struct sockaddr_in sock_addr;
 };
 
+/*
+ * Each statistic is a 2 element array.
+ * * First element: messages sent
+ * * Second element: messages received
+ */
+#define STAT_SENT 0
+#define STAT_RECV 1
+
+struct bgp_stats {
+    int open[2];
+    int update[2];
+    int notification[2];
+    int keepalive[2];
+    int route_refresh[2];
+};
+
 struct bgp_peer {
     char *name;
     uint8_t version;
@@ -58,6 +74,8 @@ struct bgp_peer {
     pthread_t util_thread;
     struct list_head ingress_msg_queue;
     struct list_head egress_msg_queue;
+
+    struct bgp_stats stats;
 };
 
 enum bgp_msg_type {
@@ -65,6 +83,7 @@ enum bgp_msg_type {
     UPDATE,
     NOTIFICATION,
     KEEPALIVE,
+    ROUTE_REFRESH,
     NUMBER_OF_MSG_TYPES //This will evaluate to the number msg types. Used during validation.
 };
 
@@ -142,6 +161,8 @@ static void parse_open(struct bgp_peer *, struct bgp_msg *);
 static void parse_update(struct bgp_peer *, struct bgp_msg *);
 static void parse_notification(struct bgp_peer *, struct bgp_msg *);
 static void parse_keepalive(struct bgp_peer *, struct bgp_msg *);
+
+void update_stats(struct bgp_peer *, enum bgp_msg_type, int send_or_recv);
 
 struct bgp_msg *alloc_bgp_msg(const uint16_t length, enum bgp_msg_type type);
 struct bgp_msg *create_bgp_open(struct bgp_peer *peer);
@@ -314,7 +335,6 @@ int bgp_connect(struct bgp_peer *peer) {
     return 0;
 }
 
-
 struct bgp_msg *create_bgp_open(struct bgp_peer *peer) {
     struct bgp_msg *message;
     const int open_msg_data_len = 10; //Length with no parameters is 10;
@@ -339,6 +359,7 @@ void queue_bgp_open(struct bgp_peer *peer) {
 
     open = create_bgp_open(peer);
     list_add(&open->list, &peer->egress_msg_queue);
+    update_stats(peer, OPEN, STAT_SENT);
 }
 
 struct bgp_msg *create_bgp_keepalive(struct bgp_peer *peer) {
@@ -353,6 +374,7 @@ void queue_bgp_keepalive(struct bgp_peer *peer) {
     struct bgp_msg *keepalive;
     keepalive = create_bgp_keepalive(peer);
     list_add(&keepalive->list, &peer->egress_msg_queue);
+    update_stats(peer, KEEPALIVE, STAT_SENT);
 }
 
 
@@ -392,8 +414,6 @@ int bgp_read_msg(struct bgp_peer *peer) {
     if (ret < 0) { //TODO: Take into account EOF and -1
         return -1;
     }
-
-    printf("ret: %d\n", ret);
 
     if (validate_header(header) < 0) {
         return -1;
@@ -460,6 +480,7 @@ static void parse_open(struct bgp_peer *peer, struct bgp_msg *message) {
     int opt_param_len;
 
     DEBUG_PRINT("Received OPEN\n");
+    update_stats(peer, OPEN, STAT_RECV) ;
 
     //Length must be at least 9 bytes
     if (MSG_LENGTH(message) < 9) {
@@ -493,9 +514,9 @@ static void parse_open(struct bgp_peer *peer, struct bgp_msg *message) {
 
 static void parse_update(struct bgp_peer *peer, struct bgp_msg *message) {
     int withdrawn_len, pa_len;
-    //int nlri_len;
     
     DEBUG_PRINT("Received UPDATE\n");
+    update_stats(peer, UPDATE, STAT_RECV);
 
     return;
 
@@ -563,14 +584,47 @@ static void parse_notification(struct bgp_peer *peer, struct bgp_msg *message) {
         "Malformed AS_PATH"
     };
 
+    update_stats(peer, NOTIFICATION, STAT_RECV);
+
 }
 
 static void parse_keepalive(struct bgp_peer *peer, struct bgp_msg *message) {
     struct bgp_msg *keepalive;
 
+    update_stats(peer, KEEPALIVE, STAT_RECV);
+
     keepalive = create_bgp_keepalive(peer);
     list_add(&keepalive->list, &peer->egress_msg_queue);
 }
+
+
+void update_stats(struct bgp_peer *peer, enum bgp_msg_type type, int send_or_recv) {
+    printf("stats: %d\n", send_or_recv);
+    if (send_or_recv != STAT_SENT && send_or_recv != STAT_RECV) {
+        bgp_print_err("update_stats() - 'send_or_recv' value error");
+    }
+
+    switch (type) {
+        case OPEN:
+            (peer->stats.open[send_or_recv])++;
+            break;
+        case UPDATE:
+            (peer->stats.update[send_or_recv])++;
+            break;
+        case NOTIFICATION:
+            (peer->stats.notification[send_or_recv])++;
+            break;
+        case KEEPALIVE:
+            (peer->stats.keepalive[send_or_recv])++;
+            break;
+        case ROUTE_REFRESH:
+            (peer->stats.route_refresh[send_or_recv])++;
+            break;
+        default:
+            bgp_print_err("update_stats() - unknown message type");
+    }
+}
+
         
 
 /*
@@ -711,7 +765,6 @@ int print_bgp_peer_info(void *arg) {
         { 4, "Multiple routes to a destination capability" },
         { 5, "Extended Next Hop Encoding" },
         { 6, "BGP-Extended Message" },
-        { 64, "Graceful Restart Capability" },
         { 65, "Support for 4-octet AS number capability" },
         { 66, "Deprecated (2003-03-06)" },
         { 67, "Support for Dynamic Capability (capability specific)" },
@@ -747,6 +800,20 @@ int print_bgp_pending_withdrawn(void *arg) {
     
     return 0;
 }
+
+int print_bgp_statistics(int argc, char **argv, void *arg) {
+    struct bgp_peer *peer = arg;
+
+    printf("BGP Message Statistics:\n");
+    printf("\tOPEN sent: %d\t\tOPEN recv: %d\n", peer->stats.open[STAT_SENT], peer->stats.open[STAT_RECV]);
+    printf("\tUPDATE sent: %d\t\tUPDATE recv: %d\n", peer->stats.update[STAT_SENT], peer->stats.update[STAT_RECV]);
+    printf("\tNOTIFICATION sent: %d\tNOTIFICATION recv: %d\n", peer->stats.notification[STAT_SENT], peer->stats.notification[STAT_RECV]);
+    printf("\tKEEPALIVE sent: %d\tKEEPALIVE recv: %d\n", peer->stats.keepalive[STAT_SENT], peer->stats.keepalive[STAT_RECV]);
+    printf("\tROUTE-REFRESH sent: %d\tROUTE-REFRESH recv: %d\n", peer->stats.route_refresh[STAT_SENT], peer->stats.route_refresh[STAT_RECV]);
+
+    return 0;
+}
+
 
 void bgp_print_err(char *err_message) {
     int error = errno;
