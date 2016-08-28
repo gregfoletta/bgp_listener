@@ -158,8 +158,7 @@ struct bgp_route_chain *extract_routes(int, uint8_t *);
 struct bgp_tlv_list *extract_tlv(uint8_t, uint8_t *);
 struct bgp_pa_chain *extract_path_attributes(uint8_t, uint8_t *);
 
-int validate_header(const uint8_t *); 
-
+int validate_header(const unsigned char *); 
 
 
 
@@ -210,14 +209,15 @@ void *bgp_rw_thread(void *param) {
     while (1) {
         if (peer->fsm_state == BGP_IDLE) {
             DEBUG_PRINT("Peer is BGP_IDLE, attempting to connect\n");
-            if ((peer->socket.fd = tcp_connect(peer->peer_ip, "bgp")) != 0) {
+            if ((peer->socket.fd = tcp_connect(peer->peer_ip, "bgp")) > 0) {
                 DEBUG_PRINT("Peer is connected on fd %d\n", peer->socket.fd);
                 peer->fsm_state = BGP_CONNECT;
                 queue_bgp_open(peer);
                 continue;
             }
 
-            DEBUG_PRINT("Connection to %s timed out... retrying\n", peer->peer_ip);
+            DEBUG_PRINT("Connection to %s timed out... waiting 10 seconds then retrying\n", peer->peer_ip);
+            sleep(10);
             continue;
         }
         if (bgp_read_msg(peer) < 0) {
@@ -358,11 +358,11 @@ void queue_bgp_keepalive(struct bgp_peer *peer) {
 
 int bgp_read_msg(struct bgp_peer *peer) {
     struct bgp_msg *message;
-    uint8_t header[BGP_HEADER_LEN];
+    unsigned char header[BGP_HEADER_LEN];
     uint16_t length;
     enum bgp_msg_type type;
 
-    uint8_t *pos;
+    unsigned char *pos;
     int ret, fd_ready;
 
     struct timeval select_wait = { 1, 0 };
@@ -384,9 +384,16 @@ int bgp_read_msg(struct bgp_peer *peer) {
 
     //We first read enough to get the header of the message
     ret = recv(peer->socket.fd, header, BGP_HEADER_LEN, MSG_WAITALL);
+    if (ret == 0) { //EOF - switch to BGP_IDLE, and (eventually) cleanup
+        peer->fsm_state = BGP_IDLE;
+        return 0;
+    }
+
     if (ret < 0) { //TODO: Take into account EOF and -1
         return -1;
     }
+
+    printf("ret: %d\n", ret);
 
     if (validate_header(header) < 0) {
         return -1;
@@ -405,6 +412,10 @@ int bgp_read_msg(struct bgp_peer *peer) {
     //Keepalives have no body
     if (MSG_LENGTH(message) - BGP_HEADER_LEN > 0) {
         ret = recv(peer->socket.fd, message->data, MSG_LENGTH(message) - BGP_HEADER_LEN, MSG_WAITALL);
+        if (ret == 0) { //EOF
+            peer->fsm_state = BGP_IDLE;
+            return 0;
+        }
         if (ret < 0) {
               return -1;
         }
@@ -445,7 +456,7 @@ int bgp_destroy_peer(struct bgp_peer *bgp_peer) {
 }
 
 static void parse_open(struct bgp_peer *peer, struct bgp_msg *message) {
-    uint8_t *pos = message->data;
+    unsigned char *pos = message->data;
     int opt_param_len;
 
     DEBUG_PRINT("Received OPEN\n");
@@ -472,7 +483,7 @@ static void parse_open(struct bgp_peer *peer, struct bgp_msg *message) {
         return;
     }
 
-    opt_param_len = uchar_to_uint8(&pos);
+    opt_param_len = uchar_to_uint8(pos);
     peer->open_parameters = extract_tlv(opt_param_len, pos);
 
 
@@ -514,7 +525,44 @@ static void parse_update(struct bgp_peer *peer, struct bgp_msg *message) {
 }
 
 static void parse_notification(struct bgp_peer *peer, struct bgp_msg *message) {
-    return;
+    const char *error_codes[] = { 
+        "Message Header Error",
+        "OPEN Message Error",
+        "UPDATE Message Error",
+        "Hold Timer Expired",
+        "Finite State Machine Error",
+        "Cease"
+    };
+
+    const char *msg_header_subcode[] = {
+        "Connection Not Synchronized",
+        "Bad Message Length",
+        "Bad Message Type"
+    };
+
+    const char *open_subcode[] = {
+        "Unsupported Version Number",
+        "Bad Peer AS",
+        "Bad BGP Identifier",
+        "Unsupported Optional Parameter",
+        "[Deprecated] (5)",
+        "Unacceptable Hold Time",
+    };
+
+    const char *update_subcode[] = {
+        "Malformed Attribute List",
+        "Unrecognized Well-known Attribute",
+        "Missing Well-known Attribute",
+        "Attribute Flags Error",
+        "Attribute Length Error",
+        "Invalid ORIGIN Attribute",
+        "[Deprecated] (7)",
+        "Invalid NEXT_HOP Attribute",
+        "Optional Attribute Error",
+        "Invalid Network Field",
+        "Malformed AS_PATH"
+    };
+
 }
 
 static void parse_keepalive(struct bgp_peer *peer, struct bgp_msg *message) {
@@ -631,11 +679,12 @@ struct bgp_msg *alloc_bgp_msg(const uint16_t data_len, enum bgp_msg_type type) {
 }
 
 
-int validate_header(const uint8_t *header) {
+int validate_header(const unsigned char *header) {
     const char marker[] = { 0xFF, 0xFF, 0xFF, 0xFF,
                             0xFF, 0xFF, 0xFF, 0xFF,
                             0xFF, 0xFF, 0xFF, 0xFF,
                             0xFF, 0xFF, 0xFF, 0xFF };
+    int x;
 
     /* The last entry in the type enum is NUMBER_OF_MSG_TYPES. 
      * Any type equal to or greater than this entry is invalid. */
