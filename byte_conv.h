@@ -6,30 +6,30 @@
 #include <stdint.h>
 
 /* Takes a pointer to uchars in network byte order */
-static inline uint8_t uchar_to_uint8(const unsigned char *bytes) {
+static inline uint8_t uchar_to_uint8(unsigned char *bytes) {
     return (uint8_t) bytes[0];
 }
 
-static inline uint8_t uchar_to_uint8_inc(const unsigned char **byte) {
+static inline uint8_t uchar_to_uint8_inc(unsigned char **byte) {
     uint8_t x = uchar_to_uint8(*byte);
     (*byte)++;
     return x;
 }
 
-static inline uint16_t uchar_be_to_uint16(const unsigned char *bytes) {
+static inline uint16_t uchar_be_to_uint16(unsigned char *bytes) {
     uint16_t x;
     x =  (uint16_t) bytes[0] << 8; 
     x |= (uint16_t) bytes[1]; 
     return x;
 }
 
-static inline uint16_t uchar_be_to_uint16_inc(const unsigned char **bytes) {
+static inline uint16_t uchar_be_to_uint16_inc(unsigned char **bytes) {
     uint16_t x = uchar_be_to_uint16(*bytes);
     *bytes += 2;
     return x;
 }
 
-static inline uint32_t uchar_be_to_uint32(const unsigned char *bytes) {
+static inline uint32_t uchar_be_to_uint32(unsigned char *bytes) {
     uint32_t x;
     x =  (uint32_t) bytes[0]; 
     x |= (uint32_t) bytes[1] << 8; 
@@ -38,13 +38,13 @@ static inline uint32_t uchar_be_to_uint32(const unsigned char *bytes) {
     return x;
 }
 
-static inline uint32_t uchar_be_to_uint32_inc(const unsigned char **bytes) {
+static inline uint32_t uchar_be_to_uint32_inc(unsigned char **bytes) {
     uint32_t x = uchar_be_to_uint32(*bytes);
     *bytes += 4;
     return x;
 }
 
-static inline uint64_t uchar_be_to_uint64(const unsigned char *bytes) {
+static inline uint64_t uchar_be_to_uint64(unsigned char *bytes) {
     uint64_t x;
     x =  (uint64_t) bytes[0]; 
     x |= (uint64_t) bytes[1] << 8; 
