@@ -159,6 +159,7 @@ struct bgp_capability_code {
 static void parse_message(struct bgp_peer *, struct bgp_msg *);
 static void parse_open(struct bgp_peer *, struct bgp_msg *);
 static void parse_update(struct bgp_peer *, struct bgp_msg *);
+static void withdraw_routes(struct bgp_peer *, uint16_t, unsigned char *);
 static void parse_notification(struct bgp_peer *, struct bgp_msg *);
 static void parse_keepalive(struct bgp_peer *, struct bgp_msg *);
 
@@ -175,7 +176,6 @@ int bgp_read_msg(struct bgp_peer *);
 int bgp_send_msg(struct bgp_peer *);
 void *bgp_util_thread(void *);
 
-struct bgp_route_chain *extract_routes(int, uint8_t *);
 struct bgp_tlv_list *extract_tlv(uint8_t, uint8_t *);
 struct bgp_pa_chain *extract_path_attributes(uint8_t, uint8_t *);
 
@@ -357,6 +357,8 @@ struct bgp_msg *create_bgp_open(struct bgp_peer *peer) {
 void queue_bgp_open(struct bgp_peer *peer) {
     struct bgp_msg *open;
 
+    DEBUG_PRINT("Queueing OPEN\n");
+    
     open = create_bgp_open(peer);
     list_add(&open->list, &peer->egress_msg_queue);
     update_stats(peer, OPEN, STAT_SENT);
@@ -372,6 +374,9 @@ struct bgp_msg *create_bgp_keepalive(struct bgp_peer *peer) {
 
 void queue_bgp_keepalive(struct bgp_peer *peer) {
     struct bgp_msg *keepalive;
+
+    DEBUG_PRINT("Queueing KEEPALIVE\n");
+
     keepalive = create_bgp_keepalive(peer);
     list_add(&keepalive->list, &peer->egress_msg_queue);
     update_stats(peer, KEEPALIVE, STAT_SENT);
@@ -411,7 +416,7 @@ int bgp_read_msg(struct bgp_peer *peer) {
         return 0;
     }
 
-    if (ret < 0) { //TODO: Take into account EOF and -1
+    if (ret < 0) { 
         return -1;
     }
 
@@ -426,8 +431,6 @@ int bgp_read_msg(struct bgp_peer *peer) {
 
     message = alloc_bgp_msg(length, type);
     memcpy(message->raw, header, BGP_HEADER_LEN);
-
-    DEBUG_PRINT("Message Received (L: %d, T: %d)\n", MSG_LENGTH(message), MSG_TYPE(message));
 
     //Keepalives have no body
     if (MSG_LENGTH(message) - BGP_HEADER_LEN > 0) {
@@ -454,7 +457,6 @@ int bgp_send_msg(struct bgp_peer *peer) {
     if (!list_empty(&peer->egress_msg_queue)) {
         list_for_each(i, &peer->egress_msg_queue) {
             message = list_entry(i, struct bgp_msg, list);
-            DEBUG_PRINT("Message Sent (L: %d, T: %d)\n", MSG_LENGTH(message), MSG_TYPE(message));
             send(peer->socket.fd, message->raw, MSG_LENGTH(message), 0);
             list_del(i);
             free(message);
@@ -513,35 +515,46 @@ static void parse_open(struct bgp_peer *peer, struct bgp_msg *message) {
 
 
 static void parse_update(struct bgp_peer *peer, struct bgp_msg *message) {
-    int withdrawn_len, pa_len;
+    uint16_t withdrawn_len, pa_len, nlri_len;
+    unsigned char *pos;
     
     DEBUG_PRINT("Received UPDATE\n");
     update_stats(peer, UPDATE, STAT_RECV);
 
-    return;
-
-    //body_pos is the current position within the BGP message body
-    uint8_t *body_pos = message->raw;
-
-    //Withdrawn length is the number of octets contained 
-    withdrawn_len = *(body_pos++) << 8;
-    withdrawn_len |= *(body_pos++);
-
-    
-    if (withdrawn_len > 0) {
-        peer->pending_withdrawn = extract_routes(withdrawn_len, body_pos);
-        body_pos += withdrawn_len;
+    pos = message->data;
+    withdrawn_len = uchar_be_to_uint16_inc(&pos);
+    if (withdrawn_len > (MSG_LENGTH(message) + BGP_HEADER_LEN + 2 + 2)) { //
+        bgp_print_err("parse_update() - received withdrawn length too large");
     }
 
-    pa_len = *(body_pos++) << 8;
-    pa_len |= *(body_pos++);
-    
+    withdraw_routes(peer, withdrawn_len, pos);
+    pa_len = uchar_be_to_uint16(pos + withdrawn_len);
     //The "4" is the withdrawn routes length field (2 bytes) and the PA Attribute length field (2 bytes)
-    //nlri_len = message.length - BGP_HEADER_LEN - 4 - withdrawn_len - pa_len;
+    nlri_len = MSG_LENGTH(message) - (BGP_HEADER_LEN + 4 + withdrawn_len + pa_len);
+}
 
-    if (pa_len > 0) {
-        extract_path_attributes(pa_len, body_pos);
-        body_pos += pa_len;
+
+static void withdraw_routes(struct bgp_peer *peer, uint16_t length, unsigned char *routes) {
+    uint8_t prefix_len, net_len;
+    unsigned char route[4]; //4 is worst case (prefix_len 32)
+
+    if (length <= 0) {
+        return;
+    }
+
+    while (length > 0) {
+
+        prefix_len = uchar_to_uint8(routes);
+        if (prefix_len > 32) { //unsigned, so don't need to check for < 32
+            bgp_print_err("withdraw_routes(): invalid prefix length");
+        }
+
+        net_len = ((prefix_len + 8) - 1) / 8; //This is a ceil()
+
+        DEBUG_PRINT("prefix_len: %d, net_len: %d\n", prefix_len, net_len);
+        
+        length -= (1 + net_len);
+        routes += (1 + net_len);
     }
 }
 
@@ -591,15 +604,14 @@ static void parse_notification(struct bgp_peer *peer, struct bgp_msg *message) {
 static void parse_keepalive(struct bgp_peer *peer, struct bgp_msg *message) {
     struct bgp_msg *keepalive;
 
-    update_stats(peer, KEEPALIVE, STAT_RECV);
+    DEBUG_PRINT("Received KEEPALIVE\n");
 
-    keepalive = create_bgp_keepalive(peer);
-    list_add(&keepalive->list, &peer->egress_msg_queue);
+    queue_bgp_keepalive(peer);
+    update_stats(peer, KEEPALIVE, STAT_RECV);
 }
 
 
 void update_stats(struct bgp_peer *peer, enum bgp_msg_type type, int send_or_recv) {
-    printf("stats: %d\n", send_or_recv);
     if (send_or_recv != STAT_SENT && send_or_recv != STAT_RECV) {
         bgp_print_err("update_stats() - 'send_or_recv' value error");
     }
@@ -626,40 +638,6 @@ void update_stats(struct bgp_peer *peer, enum bgp_msg_type type, int send_or_rec
 }
 
         
-
-/*
-extract_route()
-
-Given a start point in a buffer and a length, it recusively extracts routes from
-an update of the form [prefix_length (1 byte), prefix (var)].
-It returns a bgp_route_chain object, which is a linked list of 
-all of the routes in the update
-*/
-struct bgp_route_chain *extract_routes(int length, uint8_t *routes) {
-    struct bgp_route_chain *node = NULL;
-    int prefix_length, net_length;
-
-    if (length <= 0) {
-        return NULL;
-    }
-
-    prefix_length = *routes;
-    if (prefix_length > 32 || prefix_length < 0) {
-        bgp_print_err("bgp_route_chain(): invalid prefix length");
-    }
-
-    net_length = ceil((float) prefix_length / 8);
-
-    node = malloc(sizeof(*node));
-    node->route = malloc((net_length + 1) * sizeof(*(node->route))); //+ 1 is the 1 byte prefix.
-    memcpy(node->route, routes, net_length + 1);
-
-    //Decrease the length of routes (1 byte for the prefix len + length of the network)
-    node->next = extract_routes(length - (1 + net_length), routes + (net_length + 1));
-
-    return node;
-}
-
 
 struct bgp_tlv_list *extract_tlv(uint8_t length, uint8_t *attributes) {
     struct bgp_tlv_list *node = NULL;
