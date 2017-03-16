@@ -1,0 +1,189 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_AUTHOR	Darren Hiebert	/dhiebert@users.sourceforge.net/
+!_TAG_PROGRAM_NAME	Exuberant Ctags	//
+!_TAG_PROGRAM_URL	http://ctags.sourceforge.net	/official site/
+!_TAG_PROGRAM_VERSION	5.9~svn20110310	//
+BGP_ACTIVE	bgp.c	/^    BGP_ACTIVE, $/;"	e	enum:bgp_fsm_states	file:
+BGP_CONNECT	bgp.c	/^    BGP_CONNECT, $/;"	e	enum:bgp_fsm_states	file:
+BGP_ESTABLISHED	bgp.c	/^    BGP_ESTABLISHED $/;"	e	enum:bgp_fsm_states	file:
+BGP_HEADER_LEN	bgp.c	16;"	d	file:
+BGP_HEADER_MARKER_LEN	bgp.c	17;"	d	file:
+BGP_IDLE	bgp.c	/^    BGP_IDLE, $/;"	e	enum:bgp_fsm_states	file:
+BGP_MAX_LEN	bgp.c	20;"	d	file:
+BGP_OPENCONFIRM	bgp.c	/^    BGP_OPENCONFIRM, $/;"	e	enum:bgp_fsm_states	file:
+BGP_OPENSENT	bgp.c	/^    BGP_OPENSENT, $/;"	e	enum:bgp_fsm_states	file:
+BGP_OPEN_HEADER_LEN	bgp.c	18;"	d	file:
+CC	Makefile	/^CC   := gcc $/;"	m
+CMDNOTENTERED	cli.c	15;"	d	file:
+CMDNOTFOUND	cli.c	16;"	d	file:
+CMDRETEXIT	cli.c	14;"	d	file:
+DEBUG_PRINT	debug.h	7;"	d
+EOT	cli.c	9;"	d	file:
+INIT_LIST_HEAD	list.h	/^static inline void INIT_LIST_HEAD(struct list_head *list) {$/;"	f
+IPPROTO_OSPF	raw_socket.h	7;"	d
+KEEPALIVE	bgp.c	/^    KEEPALIVE,$/;"	e	enum:bgp_msg_type	file:
+LDFLAGS	Makefile	/^LDFLAGS = -lm -pthread$/;"	m
+LINE_BUFFER	cli.c	11;"	d	file:
+LIST_HEAD	list.h	19;"	d
+LIST_HEAD_INIT	list.h	14;"	d
+MAX_ARGS	cli.c	12;"	d	file:
+MSG_LENGTH	bgp.c	121;"	d	file:
+MSG_TYPE	bgp.c	122;"	d	file:
+NOTIFICATION	bgp.c	/^    NOTIFICATION,$/;"	e	enum:bgp_msg_type	file:
+NUMBER_OF_MSG_TYPES	bgp.c	/^    NUMBER_OF_MSG_TYPES \/\/This will evaluate to the number msg types. Used during validation.$/;"	e	enum:bgp_msg_type	file:
+OPEN	bgp.c	/^    OPEN = 1,$/;"	e	enum:bgp_msg_type	file:
+ROUTE_REFRESH	bgp.c	/^    ROUTE_REFRESH,$/;"	e	enum:bgp_msg_type	file:
+STAT_RECV	bgp.c	48;"	d	file:
+STAT_SENT	bgp.c	47;"	d	file:
+STDIN_FD	cli.c	8;"	d	file:
+TCP_BGP_PORT	bgp.c	14;"	d	file:
+UPDATE	bgp.c	/^    UPDATE,$/;"	e	enum:bgp_msg_type	file:
+__list_add	list.h	/^static inline void __list_add(struct list_head *entry, struct list_head *prev, struct list_head *next) {$/;"	f
+__list_del	list.h	/^static inline void __list_del(struct list_head *prev, struct list_head *next) {$/;"	f
+add_ospf_interface	ospf/ospf.c	/^int add_ospf_interface(struct ospf_process *ospf_p, const char *ip_address) {$/;"	f
+alloc_bgp_msg	bgp.c	/^struct bgp_msg *alloc_bgp_msg(const uint16_t data_len, enum bgp_msg_type type) {$/;"	f
+bgp_activate	bgp.c	/^int bgp_activate(struct bgp_peer *peer) {$/;"	f
+bgp_capability_code	bgp.c	/^struct bgp_capability_code {$/;"	s	file:
+bgp_connect	bgp.c	/^int bgp_connect(struct bgp_peer *peer) {$/;"	f
+bgp_create_peering	bgp.c	/^struct bgp_peer *bgp_create_peering(const char *peer_ip, const uint16_t peer_asn, const uint16_t local_asn, const uint32_t local_rid, const uint16_t hold_time, const char *peer_name) {$/;"	f
+bgp_destroy_peer	bgp.c	/^int bgp_destroy_peer(struct bgp_peer *bgp_peer) {$/;"	f
+bgp_fsm_states	bgp.c	/^enum bgp_fsm_states { $/;"	g	file:
+bgp_msg	bgp.c	/^struct bgp_msg {$/;"	s	file:
+bgp_msg_code	bgp.c	/^char *bgp_msg_code[] = {$/;"	v
+bgp_msg_type	bgp.c	/^enum bgp_msg_type {$/;"	g	file:
+bgp_pa	bgp.c	/^struct bgp_pa {$/;"	s	file:
+bgp_pa_chain	bgp.c	/^struct bgp_pa_chain {$/;"	s	file:
+bgp_peer	bgp.c	/^struct bgp_peer {$/;"	s	file:
+bgp_print_err	bgp.c	/^void bgp_print_err(char *err_message) {$/;"	f
+bgp_read_msg	bgp.c	/^int bgp_read_msg(struct bgp_peer *peer) {$/;"	f
+bgp_route_chain	bgp.c	/^struct bgp_route_chain {$/;"	s	file:
+bgp_rw_thread	bgp.c	/^void *bgp_rw_thread(void *param) {$/;"	f
+bgp_send_msg	bgp.c	/^int bgp_send_msg(struct bgp_peer *peer) {$/;"	f
+bgp_socket	bgp.c	/^struct bgp_socket {$/;"	s	file:
+bgp_stats	bgp.c	/^struct bgp_stats {$/;"	s	file:
+bgp_tlv	bgp.c	/^struct bgp_tlv {$/;"	s	file:
+bgp_tlv_list	bgp.c	/^struct bgp_tlv_list {$/;"	s	file:
+bgp_util_thread	bgp.c	/^void *bgp_util_thread(void *param) {$/;"	f
+change_debug_level	main.c	/^int change_debug_level(int argc, char **argv, void *data) { $/;"	f
+cli_command_list	cli.c	/^struct cli_command_list {$/;"	s	file:
+cli_commandlist_add	cli.c	/^int cli_commandlist_add(struct cli_command_list **head, char *command, int (*action)(int, char **, void *)) {$/;"	f
+cli_free	cli.c	/^int cli_free(struct cli_command_list *cmd_list) {$/;"	f
+cli_read_loop	cli.c	/^int cli_read_loop(struct cli_command_list *command_list, void *data) {$/;"	f
+command	cli.c	/^    char *command;$/;"	m	struct:cli_command_list	file:
+conf_hold_time	bgp.c	/^    uint16_t conf_hold_time;$/;"	m	struct:bgp_peer	file:
+create_bgp_keepalive	bgp.c	/^struct bgp_msg *create_bgp_keepalive(struct bgp_peer *peer) {$/;"	f
+create_bgp_open	bgp.c	/^struct bgp_msg *create_bgp_open(struct bgp_peer *peer) {$/;"	f
+create_ospf_process	ospf/ospf.c	/^struct ospf_process *create_ospf_process(uint32_t router_id) {$/;"	f
+curr_hold_time	bgp.c	/^    uint16_t curr_hold_time;$/;"	m	struct:bgp_peer	file:
+data	bgp.c	/^    unsigned char *data;              \/\/Pointer to the beginning of the message (after the BGP header)$/;"	m	struct:bgp_msg	file:
+debug_disable	debug.c	/^void debug_disable() {$/;"	f
+debug_enable	debug.c	/^void debug_enable() {$/;"	f
+debugging	debug.c	/^int debugging;$/;"	v
+description	bgp.c	/^    char *description;$/;"	m	struct:bgp_capability_code	file:
+destroy_ospf_process	ospf/ospf.c	/^int destroy_ospf_process(struct ospf_process *ospf_p) {$/;"	f
+egress_msg_queue	bgp.c	/^    struct list_head egress_msg_queue;$/;"	m	struct:bgp_peer	typeref:struct:bgp_peer::list_head	file:
+extract_path_attributes	bgp.c	/^struct bgp_pa_chain *extract_path_attributes(uint8_t length, uint8_t *attributes) {$/;"	f
+extract_routes	bgp.c	/^struct bgp_route_chain *extract_routes(int length, uint8_t *routes) {$/;"	f
+extract_tlv	bgp.c	/^struct bgp_tlv_list *extract_tlv(uint8_t length, uint8_t *attributes) {$/;"	f
+fd	bgp.c	/^    int fd;$/;"	m	struct:bgp_socket	file:
+flags	bgp.c	/^    uint8_t flags;$/;"	m	struct:bgp_pa	file:
+fsm_state	bgp.c	/^    enum bgp_fsm_states fsm_state;$/;"	m	struct:bgp_peer	typeref:enum:bgp_peer::bgp_fsm_states	file:
+func	cli.c	/^    int (*func)(int, char **, void *); $/;"	m	struct:cli_command_list	file:
+header	bgp.c	/^    unsigned char *header;            \/\/Pointer to the start of the header (after the 16 bytes of 0xff)$/;"	m	struct:bgp_msg	file:
+ingress_msg_queue	bgp.c	/^    struct list_head ingress_msg_queue;$/;"	m	struct:bgp_peer	typeref:struct:bgp_peer::list_head	file:
+int_fd_set	ospf/ospf.c	/^    fd_set int_fd_set;$/;"	m	struct:ospf_process	file:
+is_debug	debug.c	/^int is_debug() {$/;"	f
+keepalive	bgp.c	/^    int keepalive[2];$/;"	m	struct:bgp_stats	file:
+length	bgp.c	/^    uint16_t length;$/;"	m	struct:bgp_pa	file:
+length	bgp.c	/^    uint8_t length;$/;"	m	struct:bgp_tlv	file:
+list	bgp.c	/^    struct list_head list;$/;"	m	struct:bgp_msg	typeref:struct:bgp_msg::list_head	file:
+list_add	list.h	/^static inline void list_add(struct list_head *entry, struct list_head *head) {$/;"	f
+list_add_tail	list.h	/^static inline void list_add_tail(struct list_head *entry, struct list_head *head) {$/;"	f
+list_del	list.h	/^static inline void list_del(struct list_head *entry) {$/;"	f
+list_empty	list.h	/^static inline int list_empty(const struct list_head *head) {$/;"	f
+list_entry	list.h	35;"	d
+list_first_entry	list.h	43;"	d
+list_for_each	list.h	53;"	d
+list_for_each_reverse	list.h	59;"	d
+list_head	list.h	/^struct list_head {$/;"	s
+list_last_entry	list.h	48;"	d
+local_asn	bgp.c	/^    uint16_t local_asn;$/;"	m	struct:bgp_peer	file:
+local_rid	bgp.c	/^    uint32_t local_rid;$/;"	m	struct:bgp_peer	file:
+main	main.c	/^int main(int argc, char **argv) {$/;"	f
+main	ospf/ospf_test.c	/^int main(int argc, char **argv) {$/;"	f
+name	bgp.c	/^    char *name;$/;"	m	struct:bgp_peer	file:
+next	bgp.c	/^    struct bgp_pa_chain *next;$/;"	m	struct:bgp_pa_chain	typeref:struct:bgp_pa_chain::bgp_pa_chain	file:
+next	bgp.c	/^    struct bgp_route_chain *next;$/;"	m	struct:bgp_route_chain	typeref:struct:bgp_route_chain::bgp_route_chain	file:
+next	bgp.c	/^    struct bgp_tlv_list *next;$/;"	m	struct:bgp_tlv_list	typeref:struct:bgp_tlv_list::bgp_tlv_list	file:
+next	cli.c	/^    struct cli_command_list *next;$/;"	m	struct:cli_command_list	typeref:struct:cli_command_list::cli_command_list	file:
+next	list.h	/^    struct list_head *next;$/;"	m	struct:list_head	typeref:struct:list_head::list_head
+notification	bgp.c	/^    int notification[2];$/;"	m	struct:bgp_stats	file:
+obj	Makefile	/^obj = $(src:.c=.o)$/;"	m
+open	bgp.c	/^    int open[2];$/;"	m	struct:bgp_stats	file:
+open_parameters	bgp.c	/^    struct bgp_tlv_list *open_parameters;$/;"	m	struct:bgp_peer	typeref:struct:bgp_peer::bgp_tlv_list	file:
+ospf_interface	ospf/ospf.c	/^struct ospf_interface {$/;"	s	file:
+ospf_process	ospf/ospf.c	/^struct ospf_process {$/;"	s	file:
+pa	bgp.c	/^    struct bgp_pa pa;$/;"	m	struct:bgp_pa_chain	typeref:struct:bgp_pa_chain::bgp_pa	file:
+pa_type_code	bgp.c	/^char *pa_type_code[] = {$/;"	v
+parse_keepalive	bgp.c	/^static void parse_keepalive(struct bgp_peer *peer, struct bgp_msg *message) {$/;"	f	file:
+parse_message	bgp.c	/^static void parse_message(struct bgp_peer *peer, struct bgp_msg *message) {$/;"	f	file:
+parse_notification	bgp.c	/^static void parse_notification(struct bgp_peer *peer, struct bgp_msg *message) {$/;"	f	file:
+parse_open	bgp.c	/^static void parse_open(struct bgp_peer *peer, struct bgp_msg *message) {$/;"	f	file:
+parse_update	bgp.c	/^static void parse_update(struct bgp_peer *peer, struct bgp_msg *message) {$/;"	f	file:
+peer_asn	bgp.c	/^    uint16_t peer_asn;$/;"	m	struct:bgp_peer	file:
+peer_ip	bgp.c	/^    char *peer_ip;$/;"	m	struct:bgp_peer	file:
+peer_rid	bgp.c	/^    uint32_t peer_rid;$/;"	m	struct:bgp_peer	file:
+pending_withdrawn	bgp.c	/^    struct bgp_route_chain *pending_withdrawn;$/;"	m	struct:bgp_peer	typeref:struct:bgp_peer::bgp_route_chain	file:
+prev	list.h	/^    struct list_head *prev;$/;"	m	struct:list_head	typeref:struct:list_head::list_head
+print_bgp_peer_info	bgp.c	/^int print_bgp_peer_info(void *arg) {$/;"	f
+print_bgp_pending_withdrawn	bgp.c	/^int print_bgp_pending_withdrawn(void *arg) {$/;"	f
+print_bgp_statistics	bgp.c	/^int print_bgp_statistics(int argc, char **argv, void *arg) {$/;"	f
+print_commands	cli.c	/^int print_commands(struct cli_command_list *list) {$/;"	f
+queue_bgp_keepalive	bgp.c	/^void queue_bgp_keepalive(struct bgp_peer *peer) {$/;"	f
+queue_bgp_open	bgp.c	/^void queue_bgp_open(struct bgp_peer *peer) {$/;"	f
+quit_func	main.c	/^int quit_func(int argc, char **argv, void *data) { return -1; }$/;"	f
+raw	bgp.c	/^    unsigned char *raw;               \/\/Pointer to the start of the message$/;"	m	struct:bgp_msg	file:
+raw_sock_connect	raw_socket.c	/^int raw_sock_connect(const char *host) {$/;"	f
+raw_sock_create	raw_socket.c	/^int raw_sock_create(void) {$/;"	f
+recv_hold_time	bgp.c	/^    uint16_t recv_hold_time;$/;"	m	struct:bgp_peer	file:
+route	bgp.c	/^    uint8_t *route;                 \/\/Of the form prefix_len(1), prefix(var)$/;"	m	struct:bgp_route_chain	file:
+route_refresh	bgp.c	/^    int route_refresh[2];$/;"	m	struct:bgp_stats	file:
+router_id	ospf/ospf.c	/^    uint32_t router_id;$/;"	m	struct:ospf_process	file:
+rw_thread	bgp.c	/^    pthread_t rw_thread;$/;"	m	struct:bgp_peer	file:
+rw_thread	ospf/ospf.c	/^    pthread_t rw_thread;$/;"	m	struct:ospf_process	file:
+sd	ospf/ospf.c	/^    int sd; \/\/Socket$/;"	m	struct:ospf_interface	file:
+sock_addr	bgp.c	/^    struct sockaddr_in sock_addr;$/;"	m	struct:bgp_socket	typeref:struct:bgp_socket::sockaddr_in	file:
+socket	bgp.c	/^    struct bgp_socket socket;$/;"	m	struct:bgp_peer	typeref:struct:bgp_peer::bgp_socket	file:
+src	Makefile	/^src = $(wildcard *.c)$/;"	m
+stats	bgp.c	/^    struct bgp_stats stats;$/;"	m	struct:bgp_peer	typeref:struct:bgp_peer::bgp_stats	file:
+tcp_connect	tcp_client.c	/^int tcp_connect(const char *host, const char *port) {$/;"	f
+tlv	bgp.c	/^    struct bgp_tlv tlv;$/;"	m	struct:bgp_tlv_list	typeref:struct:bgp_tlv_list::bgp_tlv	file:
+toggle_stdin_raw	cli.c	/^int toggle_stdin_raw(void) {$/;"	f
+tokenise_and_execute	cli.c	/^int tokenise_and_execute(struct cli_command_list *command_list, char *buffer, void *data) {$/;"	f
+type	bgp.c	/^    uint8_t type;$/;"	m	struct:bgp_pa	file:
+type	bgp.c	/^    uint8_t type;$/;"	m	struct:bgp_tlv	file:
+uchar_be_to_uint16	byte_conv.h	/^static inline uint16_t uchar_be_to_uint16(unsigned char *bytes) {$/;"	f
+uchar_be_to_uint16_inc	byte_conv.h	/^static inline uint16_t uchar_be_to_uint16_inc(unsigned char **bytes) {$/;"	f
+uchar_be_to_uint32	byte_conv.h	/^static inline uint32_t uchar_be_to_uint32(unsigned char *bytes) {$/;"	f
+uchar_be_to_uint32_inc	byte_conv.h	/^static inline uint32_t uchar_be_to_uint32_inc(unsigned char **bytes) {$/;"	f
+uchar_be_to_uint64	byte_conv.h	/^static inline uint64_t uchar_be_to_uint64(unsigned char *bytes) {$/;"	f
+uchar_to_uint8	byte_conv.h	/^static inline uint8_t uchar_to_uint8(unsigned char *bytes) {$/;"	f
+uchar_to_uint8_inc	byte_conv.h	/^static inline uint8_t uchar_to_uint8_inc(unsigned char **byte) {$/;"	f
+uint16_to_uchar_be	byte_conv.h	/^static inline void uint16_to_uchar_be(unsigned char *bytes, uint16_t i) {$/;"	f
+uint16_to_uchar_be_inc	byte_conv.h	/^static inline void uint16_to_uchar_be_inc(unsigned char **bytes, uint16_t i) {$/;"	f
+uint32_to_uchar_be	byte_conv.h	/^static inline void uint32_to_uchar_be(unsigned char *bytes, uint32_t i) {$/;"	f
+uint32_to_uchar_be_inc	byte_conv.h	/^static inline void uint32_to_uchar_be_inc(unsigned char **bytes, uint32_t i) {$/;"	f
+uint64_to_uchar_be	byte_conv.h	/^static inline void uint64_to_uchar_be(unsigned char *bytes, uint64_t i) {$/;"	f
+uint64_to_uchar_be_inc	byte_conv.h	/^static inline void uint64_to_uchar_be_inc(unsigned char *bytes, uint64_t i) {$/;"	f
+uint8_to_uchar	byte_conv.h	/^static inline void uint8_to_uchar(unsigned char *bytes, uint8_t i) {$/;"	f
+uint8_to_uchar_inc	byte_conv.h	/^static inline void uint8_to_uchar_inc(unsigned char **bytes, uint8_t i) {$/;"	f
+update	bgp.c	/^    int update[2];$/;"	m	struct:bgp_stats	file:
+update_stats	bgp.c	/^void update_stats(struct bgp_peer *peer, enum bgp_msg_type type, int send_or_recv) {$/;"	f
+util_thread	bgp.c	/^    pthread_t util_thread;$/;"	m	struct:bgp_peer	file:
+util_thread	ospf/ospf.c	/^    pthread_t util_thread;$/;"	m	struct:ospf_process	file:
+validate_header	bgp.c	/^int validate_header(const unsigned char *header) {$/;"	f
+value	bgp.c	/^    uint8_t *value;$/;"	m	struct:bgp_pa	file:
+value	bgp.c	/^    uint8_t *value;$/;"	m	struct:bgp_tlv	file:
+value	bgp.c	/^    uint8_t value;$/;"	m	struct:bgp_capability_code	file:
+version	bgp.c	/^    uint8_t version;$/;"	m	struct:bgp_peer	file:
