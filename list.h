@@ -51,7 +51,7 @@ static inline void INIT_LIST_HEAD(struct list_head *list) {
  * list_for_each - iterate over a list
  */
 #define list_for_each(iterate, head) \
-    for (iterate = (head)->next; iterate != (head); iterate = iterate-next)
+    for (iterate = (head)->next; iterate != (head); iterate = iterate->next)
 
 /* 
  * list_for_each_reverse - reverse iterate over a list

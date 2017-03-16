@@ -159,9 +159,10 @@ struct bgp_capability_code {
 static void parse_message(struct bgp_peer *, struct bgp_msg *);
 static void parse_open(struct bgp_peer *, struct bgp_msg *);
 static void parse_update(struct bgp_peer *, struct bgp_msg *);
-static void withdraw_routes(struct bgp_peer *, uint16_t, unsigned char *);
 static void parse_notification(struct bgp_peer *, struct bgp_msg *);
 static void parse_keepalive(struct bgp_peer *, struct bgp_msg *);
+
+static void withdraw_routes(struct bgp_peer *, uint16_t, unsigned char *);
 
 void update_stats(struct bgp_peer *, enum bgp_msg_type, int send_or_recv);
 

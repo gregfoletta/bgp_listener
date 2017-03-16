@@ -15,6 +15,7 @@ int bgp_activate(struct bgp_peer *);
 int bgp_connect(struct bgp_peer *);
 int print_bgp_peer_info(void *);
 int print_bgp_pending_withdrawn(void *);
+int print_bgp_statistics(int argc, char **argv, void *);
 
 void bgp_print_err(char *);
 
