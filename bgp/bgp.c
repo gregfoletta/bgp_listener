@@ -4,6 +4,7 @@
 #include <sys/timerfd.h>
 #include <unistd.h>    
 #include <sys/select.h>
+#include <string.h>
 
 #include <inttypes.h> //only needed temporarily for 64bit printf
 
@@ -28,12 +29,21 @@ struct bgp {
     struct list_head ingress_msg_queue;
     struct list_head egress_msg_queue;
 
-    int uptime;
+    int uptime; //Specified in 10ths of a second
     int num_peers;
+
+    struct bgp_peer *peers[MAX_BGP_PEERS];
 
     int file_desc[MAX_FD]; 
     int max_fd; //Required for pselect();
     fd_set file_desc_set;
+};
+
+
+struct bgp_peer {
+    uint32_t router_id;
+    uint32_t asn;
+    int id;
 };
 
 
@@ -44,6 +54,7 @@ int init_bgp_timer(void);
 
 struct bgp *create_bgp_process(uint32_t router_id, uint32_t asn) {
     struct bgp *bgp_process;
+    int x;
 
     bgp_process = malloc(sizeof *bgp_process);
     if (bgp_process == NULL) {
@@ -55,6 +66,11 @@ struct bgp *create_bgp_process(uint32_t router_id, uint32_t asn) {
     bgp_process->uptime = 0;
     bgp_process->num_peers = 0;
     bgp_process->is_active = 1;
+
+    //Set all the peer pointers to NULL
+    for (x = 0; x < MAX_BGP_PEERS; x++) {
+        bgp_process->peers[x] = NULL;
+    }
 
     //Create the 1 second timer and set up the FD set
     bgp_process->file_desc[TIMER_FD] = init_bgp_timer();
@@ -96,8 +112,6 @@ void *bgp_worker_thread(void *arg) {
     return NULL;
 }
 
-
-
 void destroy_bgp_process(struct bgp *bgp_process) {
     free(bgp_process);
 }
@@ -107,8 +121,8 @@ int init_bgp_timer(void) {
     int second_timer_fd;
 
     struct itimerspec second_counter = {
-        .it_interval = { 1, 0 },
-        .it_value = { 1, 0 }
+        .it_interval = { 0, 100000000 },
+        .it_value = { 0, 100000000 }
     };
 
     second_timer_fd = timerfd_create(CLOCK_MONOTONIC, 0);
@@ -118,7 +132,45 @@ int init_bgp_timer(void) {
 }
 
 
+int add_bgp_peer(struct bgp *bgp_process, const char *host, uint32_t asn) {
+    struct bgp_peer *new_peer;
+    int peer_id;
     
+    new_peer = malloc(sizeof(*new_peer));
+    if (!new_peer) {
+        return -1;
+    }
+
+    //Find an unused peer slot
+    for (peer_id = 0; peer_id < MAX_BGP_PEERS; peer_id++) {
+        if (bgp_process->peers[peer_id]) {
+            continue;
+        }
+        
+        new_peer->asn = asn;
+        new_peer->id = peer_id;
+
+        bgp_process->peers[peer_id] = new_peer;
+        bgp_process->num_peers++;
+
+        return peer_id;
+    }
+
+    return -1;
+}
+
+
+int delete_bgp_peer(struct bgp *bgp_process, int peer_id) {
+    if (peer_id < 0 || peer_id > MAX_BGP_PEERS - 1 || !bgp_process->peers[peer_id]) {
+        return -1;
+    }
+
+    free(bgp_process->peers[peer_id]);
+    bgp_process->peers[peer_id] = NULL;
+    bgp_process->num_peers--;
+
+    return 0;
+}
 
 
 
