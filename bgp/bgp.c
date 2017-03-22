@@ -12,11 +12,13 @@
 #include <stdio.h>
 
 #include "../includes/list.h"
+#include "../includes/tcp_client.h"
 
 
 #define MAX_BGP_PEERS   16
 #define MAX_FD          MAX_BGP_PEERS + 1  //1 more FD for the timerfd
 #define TIMER_FD        0 //0 is always the timerfd for the process
+
 
 struct bgp {
     uint32_t router_id;
@@ -43,12 +45,14 @@ struct bgp {
 struct bgp_peer {
     uint32_t router_id;
     uint32_t asn;
+    int sock_fd;
     int id;
 };
 
 
 void *bgp_worker_thread(void *);
 int init_bgp_timer(void);
+int max_peer_fd(struct bgp *);
 
 
 
@@ -74,9 +78,9 @@ struct bgp *create_bgp_process(uint32_t router_id, uint32_t asn) {
 
     //Create the 1 second timer and set up the FD set
     bgp_process->file_desc[TIMER_FD] = init_bgp_timer();
-    bgp_process->max_fd = bgp_process->file_desc[TIMER_FD] + 1;
+    bgp_process->max_fd = bgp_process->file_desc[TIMER_FD];
     FD_ZERO(&bgp_process->file_desc_set);
-    FD_SET(bgp_process->file_desc[TIMER_FD], &bgp_process->file_desc_set);
+    FD_SET(bgp_process->file_desc[TIMER_FD] + 1, &bgp_process->file_desc_set);
 
 
     if  (pthread_create(&bgp_process->worker_thread, NULL, bgp_worker_thread, bgp_process) != 0) {
@@ -100,6 +104,7 @@ void *bgp_worker_thread(void *arg) {
     while (bgp_process->is_active)
     {
         ret = pselect(bgp_process->max_fd, &bgp_process->file_desc_set, NULL, NULL, NULL, NULL);
+        printf("Here\n");
 
         for (x = 0; x < MAX_FD; x++) {
             if (FD_ISSET(bgp_process->file_desc[x], &bgp_process->file_desc_set)) {
@@ -113,6 +118,11 @@ void *bgp_worker_thread(void *arg) {
 }
 
 void destroy_bgp_process(struct bgp *bgp_process) {
+    printf("Destroying");
+    bgp_process->is_active = 0;
+
+    //Join the worker thread - throw away thbe return value
+    pthread_join(bgp_process->worker_thread, NULL);
     free(bgp_process);
 }
 
@@ -138,7 +148,7 @@ int add_bgp_peer(struct bgp *bgp_process, const char *host, uint32_t asn) {
     
     new_peer = malloc(sizeof(*new_peer));
     if (!new_peer) {
-        return -1;
+        goto error;
     }
 
     //Find an unused peer slot
@@ -146,30 +156,59 @@ int add_bgp_peer(struct bgp *bgp_process, const char *host, uint32_t asn) {
         if (bgp_process->peers[peer_id]) {
             continue;
         }
+
+        bgp_process->peers[peer_id] = new_peer;
+        bgp_process->num_peers++;
         
         new_peer->asn = asn;
         new_peer->id = peer_id;
 
-        bgp_process->peers[peer_id] = new_peer;
-        bgp_process->num_peers++;
+        //Allocate the socket and add it to the FD_SET
+        if ((new_peer->sock_fd = tcp_socket(host, "179")) < 0) {
+            goto error_free;
+        }
+        FD_SET(new_peer->sock_fd, &bgp_process->file_desc_set);
+        bgp_process->max_fd = max_peer_fd(bgp_process);
 
         return peer_id;
     }
 
+error_free:
+    free(new_peer);
+error:
     return -1;
 }
 
 
 int delete_bgp_peer(struct bgp *bgp_process, int peer_id) {
+    printf("Deleting peer");
     if (peer_id < 0 || peer_id > MAX_BGP_PEERS - 1 || !bgp_process->peers[peer_id]) {
         return -1;
     }
+
+    FD_CLR(bgp_process->peers[peer_id]->sock_fd, &bgp_process->file_desc_set);
+    close(bgp_process->peers[peer_id]->sock_fd);
 
     free(bgp_process->peers[peer_id]);
     bgp_process->peers[peer_id] = NULL;
     bgp_process->num_peers--;
 
     return 0;
+}
+
+
+int max_peer_fd(struct bgp *bgp_process) {
+    int max = 0, x = 0;
+
+    for (x = 0; x < MAX_BGP_PEERS - 1; x++) {
+        if (!bgp_process->peers[x]) {
+            continue;
+        }
+
+        max = (max > bgp_process->peers[x]->sock_fd) ? max : bgp_process->peers[x]->sock_fd;
+    }
+
+    return max;
 }
 
 

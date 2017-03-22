@@ -10,11 +10,11 @@ int main(int argc, char **argv) {
     printf("Added peer %d\n", add_bgp_peer(proc, "1.1.1.1", 65000));
     printf("Added peer %d\n", add_bgp_peer(proc, "1.1.1.1", 65000));
     printf("Added peer %d\n", add_bgp_peer(proc, "1.1.1.1", 65000));
+    delete_bgp_peer(proc, 0);
+    delete_bgp_peer(proc, 1);
+    delete_bgp_peer(proc, 2);
 
-
-    
-
-    sleep(100);
+    //destroy_bgp_process(proc);
 
     return 0;
 }
